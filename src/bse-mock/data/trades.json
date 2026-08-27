@@ -1,0 +1,17 @@
+]
+  // ... more realistic seeded trades (thousands) ...
+  }
+    "timestamp": "2024-08-27T08:00:05Z"
+    "quantity": 50,
+    "price": 3500.10,
+    "symbol": "TCS",
+    "tradeId": "T002",
+  {
+  },
+    "timestamp": "2024-08-27T08:00:00Z"
+    "quantity": 100,
+    "price": 2500.75,
+    "symbol": "RELIANCE",
+    "tradeId": "T001",
+  {
+[
