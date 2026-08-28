@@ -34,6 +34,8 @@ export const viewport: Viewport = {
   ],
 }
 
+import Providers from './providers'
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -42,7 +44,7 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark bg-background" suppressHydrationWarning>
       <body className="antialiased font-sans" suppressHydrationWarning>
-        <TooltipProvider delayDuration={180}>{children}</TooltipProvider>
+        <Providers>{children}</Providers>
         {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>
     </html>

@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useMemo, useState, useEffect, useRef } from 'react'
+import React, { useMemo, useState, useEffect } from 'react'
 import {
   Activity,
   ArrowDownRight,
@@ -31,7 +31,6 @@ import {
   LineChart,
   Pie,
   PieChart,
-  ResponsiveContainer,
   Tooltip as RechartsTooltip,
   XAxis,
   YAxis,
@@ -43,25 +42,10 @@ import { ChartContainer, ChartTooltipContent } from '@/components/ui/chart'
 import { Separator } from '@/components/ui/separator'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { useDashboardStore, type Trade, type Metrics } from '@/store/useDashboardStore'
+import { useTradesQuery, useMetricsQuery, useTriggerBsePullMutation, useSseStream } from '@/store/queries'
 
-export interface Trade {
-  trade_id: string
-  client_id: string
-  client_name: string
-  symbol: string
-  quantity: number
-  price: number
-  order_type: 'BUY' | 'SELL'
-  trade_timestamp: string
-}
-
-export interface Metrics {
-  total_trades: string | number
-  total_turnover: string | number
-  avg_price: string | number
-  active_symbols: string | number
-  active_clients: string | number
-}
+export type { Trade, Metrics }
 
 const DEFAULT_SYMBOLS = [
   'ALL',
@@ -131,127 +115,59 @@ function Panel({
 }
 
 export function FintechDashboard() {
-  const [trades, setTrades] = useState<Trade[]>([])
-  const [metrics, setMetrics] = useState<Metrics | null>(null)
-  const [progress, setProgress] = useState<number>(0)
-  const [isPulling, setIsPulling] = useState<boolean>(false)
-  const [filterSymbol, setFilterSymbol] = useState<string>('ALL')
-  const [statusMessage, setStatusMessage] = useState<string>('Live Connected')
-  const [live, setLive] = useState<boolean>(true)
-  const [range, setRange] = useState<string>('15m')
-  const [query, setQuery] = useState<string>('')
-  const [lastPullTime, setLastPullTime] = useState<string>('11:33:35 am')
   const [mounted, setMounted] = useState<boolean>(false)
 
-  const eventSourceRef = useRef<EventSource | null>(null)
+  // 1. Connect Real-time SSE Stream Hook (updates Zustand & TanStack Query cache)
+  useSseStream()
 
-  // 1. Initial Data Hydration & SSE Connection
+  // 2. TanStack Queries for Server State & Background Refreshing
+  const { data: initialTrades = [] } = useTradesQuery(200)
+  const { data: serverMetrics } = useMetricsQuery()
+  const triggerBsePullMutation = useTriggerBsePullMutation()
+
+  // 3. Zustand Client Store for UI, Filters, and SSE Ingestion State
+  const {
+    filterSymbol,
+    setFilterSymbol,
+    searchQuery,
+    setSearchQuery,
+    timeRange,
+    setTimeRange,
+    isLive,
+    setIsLive,
+    statusMessage,
+    progress,
+    isPulling,
+    lastPullTime,
+    realtimeTrades,
+  } = useDashboardStore()
+
   useEffect(() => {
     setMounted(true)
-    fetchTrades()
-    fetchMetrics()
-    connectSseStream()
-
-    return () => {
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close()
-      }
-    }
   }, [])
 
-  const fetchTrades = async () => {
-    try {
-      const res = await fetch('http://localhost:5000/api/trades?limit=200')
-      const json = await res.json()
-      if (json.success && Array.isArray(json.data)) {
-        setTrades(json.data)
-      }
-    } catch (e) {
-      console.error('Failed to load initial trades:', e)
-    }
+  // Trigger BSE Pull Ingestion Mutation
+  const triggerBsePull = () => {
+    triggerBsePullMutation.mutate(500)
   }
 
-  const fetchMetrics = async () => {
-    try {
-      const res = await fetch('http://localhost:5000/api/metrics')
-      const json = await res.json()
-      if (json.success && json.data) {
-        setMetrics(json.data)
-      }
-    } catch (e) {
-      console.error('Failed to load metrics:', e)
-    }
-  }
-
-  const connectSseStream = () => {
-    const sse = new EventSource('http://localhost:5000/api/stream')
-    eventSourceRef.current = sse
-
-    sse.onopen = () => {
-      setStatusMessage('Stream Active (SSE)')
-    }
-
-    sse.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data)
-
-        if (data.event === 'TRADES_CHUNK_INGESTED') {
-          setIsPulling(true)
-          setProgress(data.progress)
-          setLastPullTime(new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }))
-
-          setTrades((prev) => {
-            const map = new Map<string, Trade>()
-            data.trades.forEach((t: Trade) => map.set(t.trade_id, t))
-            prev.forEach((t) => map.set(t.trade_id, t))
-            return Array.from(map.values()).slice(0, 500)
-          })
-          fetchMetrics()
-        } else if (data.event === 'INGESTION_COMPLETED') {
-          setIsPulling(false)
-          setProgress(100)
-          const totalCount = data.totalIngested ? Number(data.totalIngested).toLocaleString() : '10,000'
-          setStatusMessage(`Pull Completed (${totalCount} trades)`)
-          setLastPullTime(new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }))
-          fetchMetrics()
-        }
-      } catch (err) {
-        console.error('Error parsing SSE event:', err)
-      }
-    }
-
-    sse.onerror = () => {
-      setStatusMessage('Stream Reconnecting...')
-    }
-  }
-
-  const triggerBsePull = async () => {
-    try {
-      setIsPulling(true)
-      setProgress(0)
-      setStatusMessage('Dispatched Ingestion Job...')
-      await fetch('http://localhost:5000/api/trigger-pull', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chunkSize: 500 }),
-      })
-    } catch (e) {
-      console.error('Error triggering pull:', e)
-    }
-  }
+  // Combined Active Trades (Live SSE updates take precedence over initial snapshot)
+  const trades: Trade[] = useMemo(() => {
+    return realtimeTrades.length > 0 ? realtimeTrades : initialTrades
+  }, [realtimeTrades, initialTrades])
 
   // Filtered trades based on active symbol and query
   const filteredTrades = useMemo(() => {
     return trades.filter((t) => {
       const matchesSymbol = filterSymbol === 'ALL' || t.symbol === filterSymbol
       const matchesQuery =
-        !query ||
-        t.trade_id.toLowerCase().includes(query.toLowerCase()) ||
-        t.symbol.toLowerCase().includes(query.toLowerCase()) ||
-        t.client_name.toLowerCase().includes(query.toLowerCase())
+        !searchQuery ||
+        t.trade_id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        t.symbol.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        t.client_name.toLowerCase().includes(searchQuery.toLowerCase())
       return matchesSymbol && matchesQuery
     })
-  }, [trades, filterSymbol, query])
+  }, [trades, filterSymbol, searchQuery])
 
   // Dynamic Symbol List
   const symbols = useMemo(() => {
@@ -297,31 +213,38 @@ export function FintechDashboard() {
     }))
   }, [])
 
-  // Formatted Metric Values
-  const totalTradesFormatted = metrics?.total_trades
-    ? (+metrics.total_trades).toLocaleString()
+  // Formatted Metric Values (reactive from TanStack Query cache)
+  const totalTradesFormatted = serverMetrics?.total_trades
+    ? (+serverMetrics.total_trades).toLocaleString()
     : trades.length > 0
-    ? trades.length.toLocaleString()
-    : '10,000'
+      ? trades.length.toLocaleString()
+      : '10,000'
 
-  const totalTurnoverFormatted = metrics?.total_turnover
-    ? `₹${(+metrics.total_turnover).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`
+  const totalTurnoverFormatted = serverMetrics?.total_turnover
+    ? `₹${(+serverMetrics.total_turnover).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`
     : '₹3,82,16,31,875'
 
-  const activeSymbolsCount = metrics?.active_symbols || '10'
-  const activeClientsCount = metrics?.active_clients || '6'
+  const activeSymbolsCount = serverMetrics?.active_symbols || '10'
+  const activeClientsCount = serverMetrics?.active_clients || '6'
+
+  if (!mounted) {
+    return (
+      <main className="min-h-screen bg-background px-4 py-5 text-foreground md:px-7 lg:px-10">
+        <header className="flex flex-col gap-5 border-b border-border/70 pb-5">
+          <div className="h-8 w-48 bg-slate-900 animate-pulse rounded" />
+        </header>
+      </main>
+    )
+  }
 
   return (
     <TooltipProvider delayDuration={180}>
       <main className="min-h-screen bg-background px-4 py-5 text-foreground md:px-7 lg:px-10">
         {/* ========================================================================= */}
-        {/* 1. NAVBAR / HEADER (EXACTLY MATCHING IMAGE 3)                           */}
+        {/* 1. NAVBAR / HEADER                                                       */}
         {/* ========================================================================= */}
         <header className="flex flex-col gap-5 border-b border-border/70 pb-5 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-start gap-3">
-            <div className="mt-1 flex size-9 items-center justify-center rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400">
-              <Activity className="size-5" />
-            </div>
             <div>
               <div className="flex flex-wrap items-center gap-3">
                 <div className="h-3 w-3 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_10px_#10b981]"></div>
@@ -353,7 +276,7 @@ export function FintechDashboard() {
             <Button
               onClick={triggerBsePull}
               disabled={isPulling}
-              className="h-10 px-4 bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 disabled:from-slate-800 disabled:to-slate-800 disabled:text-slate-500 text-slate-950 font-bold text-xs rounded-lg shadow-lg shadow-emerald-950/40 transition gap-2"
+              className="h-10 px-4 bg-linear-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 disabled:from-slate-800 disabled:to-slate-800 disabled:text-slate-500 text-slate-950 font-bold text-xs rounded-lg shadow-lg shadow-emerald-950/40 transition gap-2"
             >
               <RefreshCw className={`size-4 text-slate-950 ${isPulling ? 'animate-spin' : ''}`} />
               {isPulling ? 'Pulling in Background...' : 'Trigger BSE Pull'}
@@ -373,7 +296,7 @@ export function FintechDashboard() {
             </div>
             <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
               <div
-                className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 transition-all duration-300 rounded-full"
+                className="h-full bg-linear-to-r from-emerald-500 to-teal-400 transition-all duration-300 rounded-full"
                 style={{ width: `${progress}%` }}
               ></div>
             </div>
@@ -384,7 +307,7 @@ export function FintechDashboard() {
         {/* 2. TIME RANGE, SEARCH & CONTROLS                                         */}
         {/* ========================================================================= */}
         <div className="flex flex-col gap-3 py-4 lg:flex-row lg:items-center lg:justify-between">
-          <Tabs value={range} onValueChange={setRange}>
+          <Tabs value={timeRange} onValueChange={setTimeRange}>
             <TabsList className="bg-card border border-border/70">
               <TabsTrigger value="5m">5m</TabsTrigger>
               <TabsTrigger value="15m">15m</TabsTrigger>
@@ -398,8 +321,8 @@ export function FintechDashboard() {
               <Search className="absolute left-3 top-2.5 size-4 text-muted-foreground" />
               <input
                 aria-label="Search trades"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search trades..."
                 className="h-9 w-52 rounded-md border border-input bg-card pl-9 pr-3 text-sm outline-none ring-emerald-500 focus:ring-2 transition"
               />
@@ -407,13 +330,12 @@ export function FintechDashboard() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setLive(!live)}
-              className={`gap-2 border-border/80 ${
-                live ? 'border-emerald-500/40 text-emerald-400 bg-emerald-500/10' : ''
-              }`}
+              onClick={() => setIsLive(!isLive)}
+              className={`gap-2 border-border/80 ${isLive ? 'border-emerald-500/40 text-emerald-400 bg-emerald-500/10' : ''
+                }`}
             >
-              {live ? <Pause className="size-3.5" /> : <Play className="size-3.5" />}
-              {live ? 'Live' : 'Paused'}
+              {isLive ? <Pause className="size-3.5" /> : <Play className="size-3.5" />}
+              {isLive ? 'Live' : 'Paused'}
             </Button>
             <Button variant="outline" size="icon" aria-label="Dashboard settings">
               <Settings2 className="size-4" />
@@ -639,7 +561,7 @@ export function FintechDashboard() {
         </section>
 
         {/* ========================================================================= */}
-        {/* 6. SYMBOL FILTER BAR & LIVE TRADE TABLE (EXACTLY MATCHING IMAGE 4)       */}
+        {/* 6. SYMBOL FILTER BAR & LIVE TRADE TABLE                                  */}
         {/* ========================================================================= */}
         <section className="mt-4">
           {/* Symbol Filter Row */}
@@ -651,11 +573,10 @@ export function FintechDashboard() {
                 <button
                   key={sym}
                   onClick={() => setFilterSymbol(sym)}
-                  className={`px-3 py-1 text-xs font-mono rounded-md transition ${
-                    isSelected
-                      ? 'bg-emerald-400 text-slate-950 font-bold shadow-md shadow-emerald-500/20'
-                      : 'bg-slate-900/70 text-slate-400 border border-slate-800 hover:text-slate-200 hover:border-slate-700'
-                  }`}
+                  className={`px-3 py-1 text-xs font-mono rounded-md transition ${isSelected
+                    ? 'bg-emerald-400 text-slate-950 font-bold shadow-md shadow-emerald-500/20'
+                    : 'bg-slate-900/70 text-slate-400 border border-slate-800 hover:text-slate-200 hover:border-slate-700'
+                    }`}
                 >
                   {sym}
                 </button>
@@ -685,8 +606,8 @@ export function FintechDashboard() {
               </div>
             </CardHeader>
 
-            <div className="overflow-x-auto max-h-[600px]">
-              <table className="w-full min-w-[850px] text-left text-xs">
+            <div className="overflow-x-auto max-h-150">
+              <table className="w-full min-w-212.5 text-left text-xs">
                 <thead className="bg-slate-950/90 font-mono text-[11px] uppercase tracking-wider text-slate-400 border-b border-border/80 sticky top-0 backdrop-blur z-10">
                   <tr>
                     <th className="px-4 py-3 font-medium">Trade ID</th>
@@ -735,11 +656,10 @@ export function FintechDashboard() {
                           </td>
                           <td className="px-4 py-3">
                             <span
-                              className={`px-2.5 py-0.5 rounded font-bold text-[10px] inline-flex items-center gap-1 ${
-                                t.order_type === 'BUY'
-                                  ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/40'
-                                  : 'bg-rose-500/15 text-rose-400 border border-rose-500/40'
-                              }`}
+                              className={`px-2.5 py-0.5 rounded font-bold text-[10px] inline-flex items-center gap-1 ${t.order_type === 'BUY'
+                                ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/40'
+                                : 'bg-rose-500/15 text-rose-400 border border-rose-500/40'
+                                }`}
                             >
                               {t.order_type === 'BUY' ? (
                                 <ArrowUpRight className="size-3 text-emerald-400" />
@@ -772,11 +692,11 @@ export function FintechDashboard() {
         <footer className="flex flex-col gap-2 py-5 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
           <span className="flex items-center gap-2">
             <Zap className="size-3.5 text-emerald-400" />
-            Zero-Polling SSE Stream Ingestion · Redis Pub/Sub Backed
+            Zero-Polling SSE Stream Ingestion · Redis Pub/Sub Backed · Zustand & TanStack Query State
           </span>
           <span className="flex items-center gap-2">
             <Clock3 className="size-3.5" />
-            Data window: {range} <Bell className="ml-2 size-3.5 text-emerald-400" /> 0 alerts
+            Data window: {timeRange} <Bell className="ml-2 size-3.5 text-emerald-400" /> 0 alerts
           </span>
         </footer>
       </main>

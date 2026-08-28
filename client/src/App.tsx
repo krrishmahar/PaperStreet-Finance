@@ -156,7 +156,7 @@ export default function App() {
           </div>
           <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
             <div
-              className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 transition-all duration-300 rounded-full"
+              className="h-full bg-linear-to-r from-emerald-500 to-teal-400 transition-all duration-300 rounded-full"
               style={{ width: `${progress}%` }}
             ></div>
           </div>
@@ -196,11 +196,10 @@ export default function App() {
           <button
             key={sym}
             onClick={() => setFilterSymbol(sym)}
-            className={`px-3 py-1 text-xs font-mono rounded-md transition ${
-              filterSymbol === sym
+            className={`px-3 py-1 text-xs font-mono rounded-md transition ${filterSymbol === sym
                 ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
                 : 'bg-slate-900/60 text-slate-400 border border-slate-800 hover:text-slate-200'
-            }`}
+              }`}
           >
             {sym}
           </button>
@@ -208,7 +207,7 @@ export default function App() {
       </div>
 
       <div className="rounded-xl border border-slate-800 bg-slate-900/40 overflow-hidden backdrop-blur shadow-2xl">
-        <div className="overflow-x-auto max-h-[580px]">
+        <div className="overflow-x-auto max-h-145">
           <table className="w-full text-left text-xs">
             <thead className="bg-slate-950/80 text-slate-400 uppercase font-mono tracking-wider sticky top-0 border-b border-slate-800 backdrop-blur">
               <tr>
@@ -239,11 +238,10 @@ export default function App() {
                     <td className="py-2.5 px-4 font-sans text-slate-300">{t.client_name}</td>
                     <td className="py-2.5 px-4">
                       <span
-                        className={`px-2 py-0.5 rounded font-bold text-[10px] ${
-                          t.order_type === 'BUY'
+                        className={`px-2 py-0.5 rounded font-bold text-[10px] ${t.order_type === 'BUY'
                             ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
                             : 'bg-rose-500/10 text-rose-400 border border-rose-500/30'
-                        }`}
+                          }`}
                       >
                         {t.order_type}
                       </span>
