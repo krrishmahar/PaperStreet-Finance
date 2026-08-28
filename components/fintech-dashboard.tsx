@@ -122,25 +122,34 @@ export function FintechDashboard() {
       else counts[t.symbol] = 1
     })
 
-    return Object.entries(counts).map(([symbol, count], i) => ({
+    return Object.entries(counts).map(([symbol, count]) => ({
       symbol,
-      trades: count > 0 ? count : 360 - i * 27,
+      trades: count,
     }))
   }, [trades])
 
-  // Formatted Metric Values (reactive from TanStack Query cache)
-  const totalTradesFormatted = serverMetrics?.total_trades
+  // Formatted Metric Values (computed dynamically from stream & cache with 0 fallbacks)
+  const totalTradesFormatted = serverMetrics?.total_trades !== undefined
     ? (+serverMetrics.total_trades).toLocaleString()
-    : trades.length > 0
-      ? trades.length.toLocaleString()
-      : '10,000'
+    : trades.length.toLocaleString()
 
-  const totalTurnoverFormatted = serverMetrics?.total_turnover
-    ? `₹${(+serverMetrics.total_turnover).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`
-    : '₹3,82,16,31,875'
+  const rawTurnover = serverMetrics?.total_turnover !== undefined
+    ? +serverMetrics.total_turnover
+    : trades.reduce((acc, t) => acc + t.quantity * t.price, 0)
 
-  const activeSymbolsCount = serverMetrics?.active_symbols || (symbols.length > 1 ? symbols.length - 1 : '10')
-  const activeClientsCount = serverMetrics?.active_clients || '6'
+  const totalTurnoverFormatted = `₹${rawTurnover.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`
+
+  const activeSymbolsCount =
+    serverMetrics?.active_symbols !== undefined
+      ? serverMetrics.active_symbols
+      : symbols.length > 1
+        ? symbols.length - 1
+        : 0
+
+  const activeClientsCount =
+    serverMetrics?.active_clients !== undefined
+      ? serverMetrics.active_clients
+      : new Set(trades.map((t) => t.client_id)).size
 
   // Dynamic Telemetry Engine: computes 60FPS derived state without backend lag
   const telemetry = useMemo(() => {
