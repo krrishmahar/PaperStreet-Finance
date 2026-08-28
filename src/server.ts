@@ -123,10 +123,11 @@ app.get('/api/stream', async (req: Request, res: Response) => {
   // Send initial keepalive
   res.write(': keepalive\n\n');
 
-  // Heartbeat comment (: ping\n\n) emitted every 15s to bypass 30s proxy/ALB timeout kill-switches
+  // Heartbeat comment (: ping\n\n) + data event emitted every 15s to bypass 30s proxy/ALB timeout kill-switches and reset client watchdog
   const heartbeatInterval = setInterval(() => {
     if (!res.writableEnded) {
       res.write(': ping\n\n');
+      res.write(`data: ${JSON.stringify({ event: 'HEARTBEAT', timestamp: Date.now() })}\n\n`);
     }
   }, 15000);
 

@@ -182,6 +182,11 @@ export function useSseStream() {
       try {
         const data = JSON.parse(event.data)
 
+        if (data.event === 'HEARTBEAT') {
+          // Heartbeat keepalive confirmed
+          return
+        }
+
         if (data.event === 'TRADES_CHUNK_INGESTED') {
           setIsPulling(true)
           setProgress(data.progress)
