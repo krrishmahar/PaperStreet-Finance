@@ -1,11 +1,11 @@
-}
-  }
-    "express": "^4.18.2"
-  "dependencies": {
-  },
-    "start": "node server.js"
-  "scripts": {
-  "main": "server.js",
-  "version": "1.0.0",
-  "name": "bse-mock",
 {
+  "name": "bse-mock",
+  "version": "1.0.0",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  }
+}
