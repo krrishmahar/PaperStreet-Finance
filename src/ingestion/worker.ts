@@ -1,6 +1,6 @@
 import Redis from 'ioredis';
-import { Queue, Worker, Job } from 'bullmq';
-import { insertTradesBatch, Trade } from '../db';
+import { Queue, Worker, type Job } from 'bullmq';
+import { insertTradesBatch, type Trade } from '../db/index';
 import 'dotenv/config';
 
 const redisHost = process.env.REDIS_HOST || '127.0.0.1';

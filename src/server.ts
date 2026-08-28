@@ -1,7 +1,7 @@
-import express, { Request, Response } from 'express';
+import express, { type Request, type Response } from 'express';
 import cors from 'cors';
 import Redis from 'ioredis';
-import db, { getRecentTrades, getTradeMetrics } from './db';
+import db, { getRecentTrades, getTradeMetrics } from './db/index';
 import { ingestionQueue, TRADE_EVENTS_CHANNEL } from './ingestion/worker';
 import 'dotenv/config';
 

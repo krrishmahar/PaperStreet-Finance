@@ -40,9 +40,9 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en" className="dark bg-background">
-      <body className="antialiased font-sans">
-        <TooltipProvider>{children}</TooltipProvider>
+    <html lang="en" className="dark bg-background" suppressHydrationWarning>
+      <body className="antialiased font-sans" suppressHydrationWarning>
+        <TooltipProvider delayDuration={180}>{children}</TooltipProvider>
         {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>
     </html>
