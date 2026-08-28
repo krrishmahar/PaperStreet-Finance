@@ -1,5 +1,7 @@
 import { create } from 'zustand'
 
+export type ConnectionStatus = 'CONNECTED' | 'CONNECTING' | 'STALE' | 'DISCONNECTED'
+
 export interface Trade {
   trade_id: string
   client_id: string
@@ -26,6 +28,11 @@ interface DashboardState {
   timeRange: string
   isLive: boolean
 
+  // Connection & Watchdog Telemetry State
+  connectionStatus: ConnectionStatus
+  lastHeartbeat: number
+  lastEventId: string | null
+
   // Ingestion & SSE Telemetry State
   statusMessage: string
   progress: number
@@ -38,6 +45,9 @@ interface DashboardState {
   setSearchQuery: (query: string) => void
   setTimeRange: (range: string) => void
   setIsLive: (live: boolean | ((prev: boolean) => boolean)) => void
+  setConnectionStatus: (status: ConnectionStatus) => void
+  recordHeartbeat: () => void
+  setLastEventId: (id: string | null) => void
   setStatusMessage: (msg: string) => void
   setProgress: (progress: number) => void
   setIsPulling: (pulling: boolean) => void
@@ -51,6 +61,11 @@ export const useDashboardStore = create<DashboardState>((set) => ({
   searchQuery: '',
   timeRange: '15m',
   isLive: true,
+
+  connectionStatus: 'CONNECTING',
+  lastHeartbeat: Date.now(),
+  lastEventId: null,
+
   statusMessage: 'Connecting to SSE Stream...',
   progress: 0,
   isPulling: false,
@@ -64,6 +79,11 @@ export const useDashboardStore = create<DashboardState>((set) => ({
     set((state) => ({
       isLive: typeof isLive === 'function' ? isLive(state.isLive) : isLive,
     })),
+
+  setConnectionStatus: (connectionStatus) => set({ connectionStatus }),
+  recordHeartbeat: () => set({ lastHeartbeat: Date.now(), connectionStatus: 'CONNECTED' }),
+  setLastEventId: (lastEventId) => set({ lastEventId }),
+
   setStatusMessage: (statusMessage) => set({ statusMessage }),
   setProgress: (progress) => set({ progress }),
   setIsPulling: (isPulling) => set({ isPulling }),

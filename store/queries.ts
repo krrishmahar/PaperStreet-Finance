@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useDashboardStore, type Trade, type Metrics } from './useDashboardStore'
 
@@ -35,9 +35,9 @@ export async function triggerBseIngestion(chunkSize = 500): Promise<{ success: b
 }
 
 /**
- * TanStack Query Hook: Trades Query
+ * TanStack Query Hook: Trades Initial Hydration Layer
  */
-export function useTradesQuery(limit = 200) {
+export function useTradeHistory(limit = 200) {
   return useQuery({
     queryKey: ['trades', limit],
     queryFn: () => fetchTrades(limit),
@@ -45,6 +45,9 @@ export function useTradesQuery(limit = 200) {
     refetchOnWindowFocus: false,
   })
 }
+
+// Alias for backwards compatibility
+export const useTradesQuery = useTradeHistory
 
 /**
  * TanStack Query Hook: Trade Metrics Query
@@ -73,7 +76,6 @@ export function useTriggerBsePullMutation() {
       setStatusMessage('Dispatched Ingestion Job...')
     },
     onSuccess: () => {
-      // Invalidate queries so TanStack Query refreshes caches
       queryClient.invalidateQueries({ queryKey: ['metrics'] })
       queryClient.invalidateQueries({ queryKey: ['trades'] })
     },
@@ -85,30 +87,84 @@ export function useTriggerBsePullMutation() {
 }
 
 /**
- * Custom Hook: Real-Time SSE Stream with Redis Pub/Sub integration
- * Synchronizes incoming chunk events with TanStack Query Cache & Zustand Store
+ * Custom Hook: Real-Time SSE Stream with Client-Side Watchdog & Redis Stream Replay
+ * - Employs a 25-second watchdog timer against silent connection freeze
+ * - Reconnects with Last-Event-ID for zero data drops
  */
 export function useSseStream() {
   const queryClient = useQueryClient()
   const eventSourceRef = useRef<EventSource | null>(null)
+  const watchdogTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const isMountedRef = useRef(true)
 
   const {
     setIsPulling,
     setProgress,
     setStatusMessage,
+    setConnectionStatus,
+    recordHeartbeat,
+    setLastEventId,
     setLastPullTime,
     prependChunkTrades,
   } = useDashboardStore()
 
-  useEffect(() => {
-    const sse = new EventSource(`${API_BASE_URL}/api/stream`)
+  // Reset watchdog timer on any event or heartbeat
+  const resetWatchdog = useCallback(() => {
+    if (watchdogTimerRef.current) {
+      clearTimeout(watchdogTimerRef.current)
+    }
+
+    recordHeartbeat()
+
+    // If 25 seconds elapse with no event or ping comment, flag STALE and reconnect
+    watchdogTimerRef.current = setTimeout(() => {
+      if (!isMountedRef.current) return
+      console.warn('[Watchdog] ⚠️ No heartbeat/event received in 25s. Connection marked STALE. Reconnecting...');
+      setConnectionStatus('STALE')
+      setStatusMessage('Connection Stale (Watchdog Triggered)')
+      
+      // Close stalled connection and trigger reconnect
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close()
+        eventSourceRef.current = null
+      }
+      connectStream()
+    }, 25000)
+  }, [recordHeartbeat, setConnectionStatus, setStatusMessage])
+
+  const connectStream = useCallback(() => {
+    if (!isMountedRef.current) return
+
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close()
+    }
+
+    setConnectionStatus('CONNECTING')
+    const currentLastEventId = useDashboardStore.getState().lastEventId
+    const streamUrl = currentLastEventId
+      ? `${API_BASE_URL}/api/stream?lastEventId=${encodeURIComponent(currentLastEventId)}`
+      : `${API_BASE_URL}/api/stream`
+
+    console.log(`[SSE Stream] Initiating connection to: ${streamUrl}`);
+    const sse = new EventSource(streamUrl)
     eventSourceRef.current = sse
 
     sse.onopen = () => {
+      if (!isMountedRef.current) return
+      console.log('[SSE Stream] ✅ Connected successfully');
+      setConnectionStatus('CONNECTED')
       setStatusMessage('Stream Active (SSE)')
+      resetWatchdog()
     }
 
     sse.onmessage = (event) => {
+      if (!isMountedRef.current) return
+      resetWatchdog()
+
+      if (event.lastEventId) {
+        setLastEventId(event.lastEventId)
+      }
+
       try {
         const data = JSON.parse(event.data)
 
@@ -127,7 +183,7 @@ export function useSseStream() {
             prependChunkTrades(data.trades)
           }
 
-          // Invalidate metrics query to update KPI tiles in real-time
+          // Refresh metrics in background
           queryClient.invalidateQueries({ queryKey: ['metrics'] })
         } else if (data.event === 'INGESTION_COMPLETED') {
           setIsPulling(false)
@@ -147,25 +203,42 @@ export function useSseStream() {
           queryClient.invalidateQueries({ queryKey: ['trades'] })
         }
       } catch (err) {
-        console.error('Error parsing SSE event:', err)
+        // SSE comments (like : ping\n\n) or non-JSON payloads
       }
     }
 
     sse.onerror = () => {
+      if (!isMountedRef.current) return
+      console.warn('[SSE Stream] Connection error encountered. State: DISCONNECTED');
+      setConnectionStatus('DISCONNECTED')
       setStatusMessage('Stream Reconnecting...')
-    }
-
-    return () => {
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close()
-      }
     }
   }, [
     queryClient,
+    resetWatchdog,
+    setConnectionStatus,
+    setLastEventId,
     setIsPulling,
     setProgress,
     setStatusMessage,
     setLastPullTime,
     prependChunkTrades,
   ])
+
+  useEffect(() => {
+    isMountedRef.current = true
+    connectStream()
+
+    return () => {
+      isMountedRef.current = false
+      if (watchdogTimerRef.current) {
+        clearTimeout(watchdogTimerRef.current)
+      }
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close()
+        eventSourceRef.current = null
+      }
+      setConnectionStatus('DISCONNECTED')
+    }
+  }, [connectStream, setConnectionStatus])
 }

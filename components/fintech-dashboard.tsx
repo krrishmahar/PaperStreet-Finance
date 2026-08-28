@@ -42,10 +42,10 @@ import { ChartContainer, ChartTooltipContent } from '@/components/ui/chart'
 import { Separator } from '@/components/ui/separator'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import { useDashboardStore, type Trade, type Metrics } from '@/store/useDashboardStore'
-import { useTradesQuery, useMetricsQuery, useTriggerBsePullMutation, useSseStream } from '@/store/queries'
+import { useDashboardStore, type Trade, type Metrics, type ConnectionStatus } from '@/store/useDashboardStore'
+import { useTradeHistory, useMetricsQuery, useTriggerBsePullMutation, useSseStream } from '@/store/queries'
 
-export type { Trade, Metrics }
+export type { Trade, Metrics, ConnectionStatus }
 
 const DEFAULT_SYMBOLS = [
   'ALL',
@@ -117,11 +117,11 @@ function Panel({
 export function FintechDashboard() {
   const [mounted, setMounted] = useState<boolean>(false)
 
-  // 1. Connect Real-time SSE Stream Hook (updates Zustand & TanStack Query cache)
+  // 1. Connect Real-time SSE Stream Hook (with 25s Watchdog Timer & Redis Stream Replay)
   useSseStream()
 
-  // 2. TanStack Queries for Server State & Background Refreshing
-  const { data: initialTrades = [] } = useTradesQuery(200)
+  // 2. TanStack Query Initial Hydration Layer
+  const { data: initialTrades = [] } = useTradeHistory(200)
   const { data: serverMetrics } = useMetricsQuery()
   const triggerBsePullMutation = useTriggerBsePullMutation()
 
@@ -135,6 +135,7 @@ export function FintechDashboard() {
     setTimeRange,
     isLive,
     setIsLive,
+    connectionStatus,
     statusMessage,
     progress,
     isPulling,
@@ -265,11 +266,33 @@ export function FintechDashboard() {
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            {/* Dark status container in Monospace font */}
+            {/* Dark status container in Monospace font with dynamic Watchdog state */}
             <div className="h-10 flex items-center gap-2 border border-border/80 bg-slate-900/90 px-3.5 rounded-lg font-mono text-xs text-slate-300 shadow-inner">
-              <span className="size-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_#10b981]" />
+              <span
+                className={`size-2 rounded-full ${
+                  connectionStatus === 'CONNECTED'
+                    ? 'bg-emerald-400 animate-pulse shadow-[0_0_8px_#10b981]'
+                    : connectionStatus === 'CONNECTING'
+                      ? 'bg-amber-400 animate-pulse shadow-[0_0_8px_#f59e0b]'
+                      : connectionStatus === 'STALE'
+                        ? 'bg-orange-500 animate-ping shadow-[0_0_8px_#f97316]'
+                        : 'bg-rose-500 shadow-[0_0_8px_#f43f5e]'
+                }`}
+              />
               Status:{' '}
-              <span className="text-emerald-400 font-semibold tracking-wide">{statusMessage}</span>
+              <span
+                className={`font-semibold tracking-wide ${
+                  connectionStatus === 'CONNECTED'
+                    ? 'text-emerald-400'
+                    : connectionStatus === 'CONNECTING'
+                      ? 'text-amber-400'
+                      : connectionStatus === 'STALE'
+                        ? 'text-orange-400'
+                        : 'text-rose-400'
+                }`}
+              >
+                {statusMessage}
+              </span>
             </div>
 
             {/* Trigger BSE Pull Action Button */}
