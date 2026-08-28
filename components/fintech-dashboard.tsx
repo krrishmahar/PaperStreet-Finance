@@ -46,6 +46,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { useDashboardStore, type Trade, type Metrics, type ConnectionStatus } from '@/store/useDashboardStore'
 import { useTradeHistory, useMetricsQuery, useTriggerBsePullMutation, useSseStream } from '@/store/queries'
+import { computeDynamicTelemetry, type DeltaMetric } from '@/store/analytics'
 
 export type { Trade, Metrics, ConnectionStatus }
 
@@ -113,6 +114,41 @@ function Panel({
       </CardHeader>
       <CardContent>{children}</CardContent>
     </Card>
+  )
+}
+
+function renderDeltaBadge(delta: DeltaMetric, isCount = false) {
+  if (delta.isZero) {
+    return (
+      <Badge
+        variant="secondary"
+        className="gap-1 text-slate-400 bg-slate-500/10 border border-slate-500/20 font-mono text-[10px]"
+      >
+        {isCount ? '+0' : '0.0%'}
+      </Badge>
+    )
+  }
+
+  if (delta.isPositive) {
+    return (
+      <Badge
+        variant="secondary"
+        className="gap-1 text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 font-mono text-[10px]"
+      >
+        <ArrowUpRight className="size-3 text-emerald-400" />
+        {delta.formatted}
+      </Badge>
+    )
+  }
+
+  return (
+    <Badge
+      variant="secondary"
+      className="gap-1 text-rose-400 bg-rose-500/10 border border-rose-500/20 font-mono text-[10px]"
+    >
+      <ArrowDownRight className="size-3 text-rose-400" />
+      {delta.formatted}
+    </Badge>
   )
 }
 
@@ -238,8 +274,13 @@ export function FintechDashboard() {
     ? `₹${(+serverMetrics.total_turnover).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`
     : '₹3,82,16,31,875'
 
-  const activeSymbolsCount = serverMetrics?.active_symbols || '10'
+  const activeSymbolsCount = serverMetrics?.active_symbols || (symbols.length > 1 ? symbols.length - 1 : '10')
   const activeClientsCount = serverMetrics?.active_clients || '6'
+
+  // Dynamic Telemetry Engine: computes 60FPS derived state without backend lag
+  const telemetry = useMemo(() => {
+    return computeDynamicTelemetry(trades, serverMetrics)
+  }, [trades, serverMetrics])
 
   if (!mounted) {
     return (
@@ -390,12 +431,9 @@ export function FintechDashboard() {
                 <span className="font-mono text-2xl font-bold text-white">
                   {totalTradesFormatted}
                 </span>
-                <Badge variant="secondary" className="gap-1 text-emerald-400 bg-emerald-500/10 border border-emerald-500/20">
-                  <ArrowUpRight className="size-3" />
-                  +8.4%
-                </Badge>
+                {renderDeltaBadge(telemetry.tradesDelta)}
               </div>
-              <p className="mt-2 text-[11px] text-muted-foreground">vs previous pull</p>
+              <p className="mt-2 text-[11px] text-muted-foreground">vs previous half-window</p>
             </CardContent>
           </Card>
 
@@ -406,12 +444,11 @@ export function FintechDashboard() {
                 <span className="font-mono text-2xl font-bold text-emerald-400">
                   {totalTurnoverFormatted}
                 </span>
-                <Badge variant="secondary" className="gap-1 text-emerald-400 bg-emerald-500/10 border border-emerald-500/20">
-                  <ArrowUpRight className="size-3" />
-                  +12.6%
-                </Badge>
+                {renderDeltaBadge(telemetry.turnoverDelta)}
               </div>
-              <p className="mt-2 text-[11px] text-muted-foreground">₹42.8Cr / hour</p>
+              <p className="mt-2 text-[11px] font-mono text-muted-foreground">
+                {telemetry.turnoverVelocityFormatted}
+              </p>
             </CardContent>
           </Card>
 
@@ -422,10 +459,7 @@ export function FintechDashboard() {
                 <span className="font-mono text-2xl font-bold text-sky-400">
                   {activeSymbolsCount}
                 </span>
-                <Badge variant="secondary" className="gap-1 text-sky-400 bg-sky-500/10 border border-sky-500/20">
-                  <ArrowUpRight className="size-3" />
-                  +2
-                </Badge>
+                {renderDeltaBadge(telemetry.activeEquitiesDelta, true)}
               </div>
               <p className="mt-2 text-[11px] text-muted-foreground">symbols in stream</p>
             </CardContent>
@@ -438,7 +472,10 @@ export function FintechDashboard() {
                 <span className="font-mono text-2xl font-bold text-indigo-400">
                   {activeClientsCount}
                 </span>
-                <Badge variant="secondary" className="gap-1 text-indigo-400 bg-indigo-500/10 border border-indigo-500/20">
+                <Badge
+                  variant="secondary"
+                  className="gap-1 text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 font-mono text-[10px]"
+                >
                   <ArrowUpRight className="size-3" />
                   100%
                 </Badge>
