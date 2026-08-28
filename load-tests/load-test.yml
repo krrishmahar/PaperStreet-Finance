@@ -1,0 +1,15 @@
+config:
+  target: "http://host.docker.internal:5000"
+  phases:
+    - duration: 60
+      arrivalCount: 500
+      name: "Sustained Load: 500 Virtual Users over 60 seconds"
+  http:
+    timeout: 30
+scenarios:
+  - name: "React Bootstrap (Trades & Metrics Ingestion)"
+    flow:
+      - get:
+          url: "/api/trades?limit=200"
+      - get:
+          url: "/api/metrics"

@@ -1,6 +1,8 @@
+name: fintech-bse
+
 services:
   postgres:
-    image: postgres:18-alpine
+    image: postgres:16-alpine
     container_name: fintech-postgres
     restart: unless-stopped
     ports:
@@ -10,12 +12,12 @@ services:
       POSTGRES_PASSWORD: password
       POSTGRES_DB: fintech_bse
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: [ "CMD-SHELL", "pg_isready -U postgres -d fintech_bse" ]
       interval: 5s
       timeout: 5s
       retries: 5
     volumes:
-      - pg_data:/var/lib/postgresql
+      - pg_data:/var/lib/postgresql/data
       - ./src/db/schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
 
   redis:
@@ -23,12 +25,62 @@ services:
     container_name: fintech-redis
     restart: unless-stopped
     mem_limit: 768m
-    command: ["redis-server", "--maxmemory", "512mb", "--maxmemory-policy", "allkeys-lru"]
+    command: [ "redis-server", "--maxmemory", "512mb", "--maxmemory-policy", "allkeys-lru" ]
     ports:
       - "6380:6379"
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 5s
+      timeout: 3s
+      retries: 5
     volumes:
-      - redisdata:/data
+      - redis_data:/data
+
+  playwright-mcp:
+    image: mcr.microsoft.com/playwright:v1.42.0-jammy
+    container_name: playwright-mcp
+    restart: unless-stopped
+    command: >
+      npx -y @playwright/mcp@latest --port 3000 --host 0.0.0.0
+    init: true
+    ipc: host
+    security_opt:
+      - seccomp=unconfined
+    ports:
+      - "3000:3000"
+    healthcheck:
+      # Replaces the 400-error curl hack with a clean TCP socket test
+      test: [ "CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/3000'" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  serena-mcp:
+    image: ghcr.io/oraios/serena:latest
+    container_name: serena-mcp
+    restart: unless-stopped
+    volumes:
+      - .:/workspaces/projects
+    ports:
+      - "8000:8000"
+    command: >
+      serena start-mcp-server --transport sse --host 0.0.0.0 --port 8000 --project /workspaces/projects --open-web-dashboard false
+    healthcheck:
+      test: [ "CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/8000'" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Artillery container configured in "sleep" mode so the AI agent can execute tests dynamically
+  artillery:
+    image: artilleryio/artillery:latest
+    container_name: fintech-artillery
+    restart: unless-stopped
+    entrypoint: [ "tail", "-f", "/dev/null" ]
+    volumes:
+      - ./load-tests:/scripts
 
 volumes:
   pg_data:
-  redisdata:
+  redis_data:
