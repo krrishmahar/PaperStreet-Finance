@@ -60,6 +60,17 @@ export interface BseFetchPayload {
   };
 }
 
+import {
+  circuitBreakerStateGauge,
+  circuitBreakerTripsCounter,
+  circuitBreakerSuccessesCounter,
+  circuitBreakerFailuresCounter,
+  tradesIngestedCounter,
+  tradesAmendedCounter,
+  jobsCompletedCounter,
+  jobsFailedCounter,
+} from '../metrics';
+
 /**
  * Raw fetch function for BSE Mock API
  */
@@ -85,18 +96,33 @@ const breakerOptions: CircuitBreaker.Options = {
 
 export const bseCircuitBreaker = new CircuitBreaker(fetchBseChunk, breakerOptions);
 
+// Initialize Circuit Breaker State to 0 (CLOSED/Healthy)
+circuitBreakerStateGauge.set(0);
+
 bseCircuitBreaker.on('open', () => {
+  circuitBreakerStateGauge.set(2);
+  circuitBreakerTripsCounter.inc();
   console.warn(
     '[CircuitBreaker] ⚠️ BSE API Breaker TRIPPED (OPEN): Failure rate >50% within 30s. Halting upstream calls.'
   );
 });
 
 bseCircuitBreaker.on('halfOpen', () => {
+  circuitBreakerStateGauge.set(1);
   console.log('[CircuitBreaker] 🔄 BSE API Breaker HALF-OPEN: Testing upstream connectivity with probe request...');
 });
 
 bseCircuitBreaker.on('close', () => {
+  circuitBreakerStateGauge.set(0);
   console.log('[CircuitBreaker] ✅ BSE API Breaker CLOSED: Upstream connection healthy and recovered.');
+});
+
+bseCircuitBreaker.on('success', () => {
+  circuitBreakerSuccessesCounter.inc();
+});
+
+bseCircuitBreaker.on('failure', () => {
+  circuitBreakerFailuresCounter.inc();
 });
 
 export const ingestionWorker = new Worker<IngestionJobData>(
@@ -130,7 +156,10 @@ export const ingestionWorker = new Worker<IngestionJobData>(
         const result = await insertTradesBatch(trades);
         totalIngested += result.insertedCount;
 
+        // Prometheus Telemetry: Record inserted & amended trades
+        tradesIngestedCounter.inc(result.insertedCount);
         if (result.amendedCount > 0) {
+          tradesAmendedCounter.inc(result.amendedCount);
           console.log(
             `[IngestionWorker] ⚠️ Overwritten/Amended ${result.amendedCount} trades via temporal check: [${result.amendedTradeIds.slice(0, 5).join(', ')}${result.amendedCount > 5 ? '...' : ''}]`
           );
@@ -181,3 +210,11 @@ export const ingestionWorker = new Worker<IngestionJobData>(
     concurrency: 1,
   }
 );
+
+ingestionWorker.on('completed', () => {
+  jobsCompletedCounter.inc();
+});
+
+ingestionWorker.on('failed', () => {
+  jobsFailedCounter.inc();
+});

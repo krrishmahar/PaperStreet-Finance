@@ -4,6 +4,7 @@ import Redis from 'ioredis';
 import db, { getRecentTrades, getTradeMetrics } from './db/index';
 import { ingestionQueue, TRADE_EVENTS_CHANNEL, REDIS_STREAM_KEY } from './ingestion/worker';
 import { redisStreamWrapper } from './redisStreamWrapper';
+import { register, httpRequestDurationHistogram, queueDepthGauge } from './metrics';
 import 'dotenv/config';
 
 const app = express();
@@ -13,8 +14,43 @@ const BSE_MOCK_URL = process.env.BSE_MOCK_URL || 'http://localhost:4000';
 app.use(cors());
 app.use(express.json());
 
+// Prometheus HTTP Request Latency Tracking Middleware
+app.use((req, res, next) => {
+  const start = process.hrtime();
+  res.on('finish', () => {
+    const diff = process.hrtime(start);
+    const durationSeconds = diff[0] + diff[1] / 1e9;
+    const route = req.route ? req.baseUrl + req.route.path : req.path;
+    httpRequestDurationHistogram.observe(
+      {
+        method: req.method,
+        route,
+        status_code: res.statusCode,
+      },
+      durationSeconds
+    );
+  });
+  next();
+});
+
 const redisHost = process.env.REDIS_HOST || '127.0.0.1';
 const redisPort = Number(process.env.REDIS_PORT || 6380);
+
+/**
+ * Prometheus Metrics Scrape Endpoint
+ */
+app.get('/metrics', async (_req: Request, res: Response) => {
+  try {
+    const waiting = await ingestionQueue.getWaitingCount();
+    const active = await ingestionQueue.getActiveCount();
+    queueDepthGauge.set(waiting + active);
+
+    res.setHeader('Content-Type', register.contentType);
+    res.send(await register.metrics());
+  } catch (err: any) {
+    res.status(500).send(err.message);
+  }
+});
 
 app.get('/api/ping', async (_req: Request, res: Response) => {
   try {
