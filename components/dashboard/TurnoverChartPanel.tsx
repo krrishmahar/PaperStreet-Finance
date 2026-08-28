@@ -27,12 +27,14 @@ export function TurnoverChartSkeleton() {
 
 interface TurnoverChartPanelProps {
   chartRef: React.RefObject<TradingViewChartRef | null>
+  data?: Array<{ time: number; turnover: number; buys: number }>
   height?: number
   isLoading?: boolean
 }
 
 export function TurnoverChartPanel({
   chartRef,
+  data,
   height = 260,
   isLoading = false,
 }: TurnoverChartPanelProps) {
@@ -69,7 +71,7 @@ export function TurnoverChartPanel({
       </CardHeader>
       <CardContent>
         <div className="pt-2">
-          <TradingViewChart ref={chartRef} height={height} />
+          <TradingViewChart ref={chartRef} data={data} height={height} />
         </div>
       </CardContent>
     </Card>

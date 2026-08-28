@@ -10,6 +10,7 @@ export interface DeltaMetric {
 
 export interface TimeBucketedFlow {
   time: string
+  timestamp: number
   value: number // Total turnover in ₹ Crores
   buys: number  // BUY order turnover in ₹ Crores
 }
@@ -241,11 +242,16 @@ export function computeDynamicTelemetry(
     bucketMap.set(slotKey, existing)
   }
 
-  const flowData: TimeBucketedFlow[] = Array.from(bucketMap.entries()).map(([time, data]) => ({
-    time,
-    value: +data.value.toFixed(2),
-    buys: +data.buys.toFixed(2),
-  }))
+  const BASE_MARKET_TIME = 1724816700 // Standard base market timestamp
+  const flowData: TimeBucketedFlow[] = standardSlots.map((time, idx) => {
+    const data = bucketMap.get(time) || { value: 0, buys: 0 }
+    return {
+      time,
+      timestamp: BASE_MARKET_TIME + idx * 900,
+      value: +data.value.toFixed(2),
+      buys: +data.buys.toFixed(2),
+    }
+  })
 
   // 6. Rolling API Latency Percentiles (P50 & P95)
   let latencyData: LatencyDataPoint[] = []

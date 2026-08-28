@@ -1,4 +1,5 @@
 import React, { useRef } from 'react'
+import * as XLSX from 'xlsx'
 import { Card, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -108,6 +109,34 @@ export function LiveTradeTable({
     overscan: 10,
   })
 
+  // Fast client-side export to Excel (.xlsx) using SheetJS
+  const handleExportExcel = () => {
+    if (filteredTrades.length === 0) {
+      alert('No trade records available to export. Click "Trigger BSE Pull" first.')
+      return
+    }
+
+    const exportData = filteredTrades.map((t) => ({
+      'Trade ID': t.trade_id,
+      Timestamp: new Date(t.trade_timestamp).toLocaleString('en-IN'),
+      Symbol: t.symbol,
+      'Client Name': t.client_name,
+      'Client ID': t.client_id,
+      'Order Type': t.order_type,
+      Quantity: t.quantity,
+      'Price (INR)': t.price,
+      'Total Value (INR)': +(t.quantity * t.price).toFixed(2),
+    }))
+
+    const worksheet = XLSX.utils.json_to_sheet(exportData)
+    const workbook = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'BSE Trades')
+    XLSX.writeFile(
+      workbook,
+      `BSE_Trades_${filterSymbol}_${new Date().toISOString().slice(0, 10)}.xlsx`
+    )
+  }
+
   if (isLoading) {
     return <LiveTradeTableSkeleton />
   }
@@ -184,11 +213,14 @@ export function LiveTradeTable({
             </Badge>
           </CardTitle>
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="sm" className="gap-2 text-xs">
-              <SlidersHorizontal className="size-3.5" />
-              Columns
-            </Button>
-            <Button variant="ghost" size="icon" aria-label="Download trades">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleExportExcel}
+              className="cursor-pointer hover:bg-slate-800 text-slate-300 hover:text-emerald-400 transition"
+              aria-label="Export trades to Excel"
+              title="Download filtered trades in Excel (.xlsx) format"
+            >
               <Download className="size-4" />
             </Button>
           </div>

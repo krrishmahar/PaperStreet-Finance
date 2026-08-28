@@ -19,25 +19,13 @@ export interface TradingViewChartRef {
 }
 
 interface TradingViewChartProps {
-  initialData?: Array<{ time: number; turnover: number; buys: number }>
+  data?: Array<{ time: number; turnover: number; buys: number }>
   height?: number
 }
 
-// Baseline market hours flow data (09:15 AM - 11:30 AM in ₹ Crores)
-const DEFAULT_FLOW_POINTS = [
-  { time: 1724816700, turnover: 1.8, buys: 1.1 },
-  { time: 1724817600, turnover: 2.28, buys: 1.46 },
-  { time: 1724818500, turnover: 2.76, buys: 1.82 },
-  { time: 1724819400, turnover: 3.24, buys: 2.18 },
-  { time: 1724820300, turnover: 3.72, buys: 2.54 },
-  { time: 1724821200, turnover: 4.2, buys: 2.9 },
-  { time: 1724822100, turnover: 4.68, buys: 3.26 },
-  { time: 1724823000, turnover: 5.16, buys: 3.62 },
-  { time: 1724823900, turnover: 5.64, buys: 3.98 },
-  { time: 1724824800, turnover: 6.12, buys: 4.34 },
-]
-
-function sanitizeAndSortSeriesData(data: Array<{ time: number; value: number }>): Array<{ time: UTCTimestamp; value: number }> {
+function sanitizeAndSortSeriesData(
+  data: Array<{ time: number; value: number }>
+): Array<{ time: UTCTimestamp; value: number }> {
   if (!data || data.length === 0) return []
   const sorted = [...data].sort((a, b) => a.time - b.time)
   const deduped: Array<{ time: UTCTimestamp; value: number }> = []
@@ -55,7 +43,7 @@ function sanitizeAndSortSeriesData(data: Array<{ time: number; value: number }>)
 }
 
 export const TradingViewChart = forwardRef<TradingViewChartRef, TradingViewChartProps>(
-  ({ initialData, height = 290 }, ref) => {
+  ({ data = [], height = 260 }, ref) => {
     const chartContainerRef = useRef<HTMLDivElement>(null)
     const chartInstanceRef = useRef<IChartApi | null>(null)
     const turnoverSeriesRef = useRef<ISeriesApi<'Area'> | null>(null)
@@ -63,11 +51,10 @@ export const TradingViewChart = forwardRef<TradingViewChartRef, TradingViewChart
     const lastTurnoverTimeRef = useRef<number>(0)
     const lastBuyTimeRef = useRef<number>(0)
 
-    // Expose imperative update handles (protected against out-of-order ticks & jitter)
+    // Expose imperative update handles
     useImperativeHandle(ref, () => ({
       updateTurnover: (timestampSec: number, turnoverCr: number) => {
         if (!turnoverSeriesRef.current || isNaN(timestampSec) || isNaN(turnoverCr)) return
-        // Silently discard out-of-order retro-ticks to prevent TradingView assertion crashes
         if (timestampSec >= lastTurnoverTimeRef.current) {
           try {
             turnoverSeriesRef.current.update({
@@ -76,13 +63,12 @@ export const TradingViewChart = forwardRef<TradingViewChartRef, TradingViewChart
             })
             lastTurnoverTimeRef.current = timestampSec
           } catch (err) {
-            console.warn('[TradingViewChart] Suppressed out-of-bounds turnover tick:', err)
+            console.warn('[TradingViewChart] Suppressed turnover tick:', err)
           }
         }
       },
       updateBuyFlow: (timestampSec: number, buyCr: number) => {
         if (!buyFlowSeriesRef.current || isNaN(timestampSec) || isNaN(buyCr)) return
-        // Silently discard out-of-order retro-ticks to prevent TradingView assertion crashes
         if (timestampSec >= lastBuyTimeRef.current) {
           try {
             buyFlowSeriesRef.current.update({
@@ -91,20 +77,20 @@ export const TradingViewChart = forwardRef<TradingViewChartRef, TradingViewChart
             })
             lastBuyTimeRef.current = timestampSec
           } catch (err) {
-            console.warn('[TradingViewChart] Suppressed out-of-bounds buy flow tick:', err)
+            console.warn('[TradingViewChart] Suppressed buy flow tick:', err)
           }
         }
       },
       getChart: () => chartInstanceRef.current,
     }))
 
+    // Initialize Chart Canvas Engine
     useEffect(() => {
       if (!chartContainerRef.current) return
 
       const container = chartContainerRef.current
       const width = container.clientWidth || 600
 
-      // 1. Initialize Lightweight-Charts Engine
       const chart = createChart(container, {
         width,
         height,
@@ -149,7 +135,7 @@ export const TradingViewChart = forwardRef<TradingViewChartRef, TradingViewChart
 
       chartInstanceRef.current = chart
 
-      // 2. Add Turnover Area Series (Emerald Gradient)
+      // Turnover Area Series (Emerald Gradient)
       const turnoverSeries = chart.addSeries(AreaSeries, {
         topColor: 'rgba(16, 185, 129, 0.45)',
         bottomColor: 'rgba(16, 185, 129, 0.02)',
@@ -162,7 +148,7 @@ export const TradingViewChart = forwardRef<TradingViewChartRef, TradingViewChart
       })
       turnoverSeriesRef.current = turnoverSeries
 
-      // 3. Add Buy Flow Line Series (Sky Blue)
+      // Buy Flow Line Series (Sky Blue)
       const buyFlowSeries = chart.addSeries(LineSeries, {
         color: '#38bdf8',
         lineWidth: 2,
@@ -173,28 +159,7 @@ export const TradingViewChart = forwardRef<TradingViewChartRef, TradingViewChart
       })
       buyFlowSeriesRef.current = buyFlowSeries
 
-      // 4. Hydrate Initial Series Data with Chronological Sorting & Deduplication
-      const dataset = initialData && initialData.length > 0 ? initialData : DEFAULT_FLOW_POINTS
-      const sanitizedTurnover = sanitizeAndSortSeriesData(
-        dataset.map((d) => ({ time: d.time, value: d.turnover }))
-      )
-      const sanitizedBuys = sanitizeAndSortSeriesData(
-        dataset.map((d) => ({ time: d.time, value: d.buys }))
-      )
-
-      turnoverSeries.setData(sanitizedTurnover)
-      buyFlowSeries.setData(sanitizedBuys)
-
-      if (sanitizedTurnover.length > 0) {
-        lastTurnoverTimeRef.current = sanitizedTurnover[sanitizedTurnover.length - 1].time as number
-      }
-      if (sanitizedBuys.length > 0) {
-        lastBuyTimeRef.current = sanitizedBuys[sanitizedBuys.length - 1].time as number
-      }
-
-      chart.timeScale().fitContent()
-
-      // 5. Responsive Resize Observer
+      // Responsive Resize Observer
       const resizeObserver = new ResizeObserver((entries) => {
         if (!entries || entries.length === 0 || !entries[0].contentRect) return
         const newWidth = entries[0].contentRect.width
@@ -211,7 +176,37 @@ export const TradingViewChart = forwardRef<TradingViewChartRef, TradingViewChart
         turnoverSeriesRef.current = null
         buyFlowSeriesRef.current = null
       }
-    }, [initialData, height])
+    }, [height])
+
+    // Reactively update series when data prop changes
+    useEffect(() => {
+      if (!turnoverSeriesRef.current || !buyFlowSeriesRef.current || !chartInstanceRef.current) return
+
+      if (!data || data.length === 0) {
+        turnoverSeriesRef.current.setData([])
+        buyFlowSeriesRef.current.setData([])
+        return
+      }
+
+      const sanitizedTurnover = sanitizeAndSortSeriesData(
+        data.map((d) => ({ time: d.time, value: d.turnover }))
+      )
+      const sanitizedBuys = sanitizeAndSortSeriesData(
+        data.map((d) => ({ time: d.time, value: d.buys }))
+      )
+
+      turnoverSeriesRef.current.setData(sanitizedTurnover)
+      buyFlowSeriesRef.current.setData(sanitizedBuys)
+
+      if (sanitizedTurnover.length > 0) {
+        lastTurnoverTimeRef.current = sanitizedTurnover[sanitizedTurnover.length - 1].time as number
+      }
+      if (sanitizedBuys.length > 0) {
+        lastBuyTimeRef.current = sanitizedBuys[sanitizedBuys.length - 1].time as number
+      }
+
+      chartInstanceRef.current.timeScale().fitContent()
+    }, [data])
 
     return (
       <div className="relative w-full">
