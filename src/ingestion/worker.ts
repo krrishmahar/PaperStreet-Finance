@@ -3,21 +3,11 @@ import { Queue, Worker, type Job } from 'bullmq';
 import CircuitBreaker from 'opossum';
 import { insertTradesBatch, type Trade } from '../db/index';
 import { redisStreamWrapper, REDIS_STREAM_KEY, TRADE_EVENTS_CHANNEL } from '../redisStreamWrapper';
+import { createRedisClient, getRedisOptions } from '../redisConfig';
 import 'dotenv/config';
 
-const redisHost = process.env.REDIS_HOST || '127.0.0.1';
-const redisPort = Number(process.env.REDIS_PORT || 6380);
-
-export const redisConnection = new Redis({
-  host: redisHost,
-  port: redisPort,
-  maxRetriesPerRequest: null,
-});
-
-export const redisPublisher = new Redis({
-  host: redisHost,
-  port: redisPort,
-});
+export const redisConnection = createRedisClient({ maxRetriesPerRequest: null });
+export const redisPublisher = createRedisClient();
 
 export const INGESTION_QUEUE_NAME = 'bse-trade-ingestion';
 export { REDIS_STREAM_KEY, TRADE_EVENTS_CHANNEL };

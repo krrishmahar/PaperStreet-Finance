@@ -1,8 +1,6 @@
 import Redis from 'ioredis';
+import { createRedisClient } from './redisConfig';
 import 'dotenv/config';
-
-const redisHost = process.env.REDIS_HOST || '127.0.0.1';
-const redisPort = Number(process.env.REDIS_PORT || 6380);
 
 export const REDIS_STREAM_KEY = 'trades:stream';
 export const TRADE_EVENTS_CHANNEL = 'trades:realtime:events';
@@ -12,13 +10,7 @@ export class RedisStreamWrapper {
   private publisher: Redis;
 
   constructor(publisherClient?: Redis) {
-    this.publisher =
-      publisherClient ||
-      new Redis({
-        host: redisHost,
-        port: redisPort,
-        lazyConnect: false,
-      });
+    this.publisher = publisherClient || createRedisClient({ lazyConnect: false });
   }
 
   /**
@@ -75,10 +67,7 @@ export class RedisStreamWrapper {
    * Helper to instantiate a dedicated reader Redis instance for SSE streaming
    */
   createStreamReader(): Redis {
-    return new Redis({
-      host: redisHost,
-      port: redisPort,
-    });
+    return createRedisClient();
   }
 }
 

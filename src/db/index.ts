@@ -1,21 +1,47 @@
-import { Pool } from 'pg';
+import { Pool, type PoolConfig } from 'pg';
 import 'dotenv/config';
 
-const dbHost = process.env.DB_HOST || process.env.PG_HOST || '127.0.0.1';
-const dbPort = Number(process.env.DB_PORT || process.env.PG_PORT || (process.env.USE_PGBOUNCER === 'true' ? 6543 : 5432));
-const dbUser = process.env.DB_USER || process.env.PG_USER || 'postgres';
-const dbPassword = process.env.DB_PASSWORD || process.env.PG_PASSWORD || 'password';
-const dbName = process.env.DB_NAME || process.env.PG_DATABASE || 'fintech_bse';
+const getPoolConfig = (): PoolConfig => {
+  if (process.env.DATABASE_URL) {
+    return {
+      connectionString: process.env.DATABASE_URL,
+      ssl:
+        process.env.NODE_ENV === 'production' ||
+        process.env.DATABASE_URL.includes('sslmode=require') ||
+        process.env.DB_SSL === 'true'
+          ? { rejectUnauthorized: false }
+          : undefined,
+      max: Number(process.env.PG_MAX_POOL || 20),
+      idleTimeoutMillis: 30000,
+    };
+  }
 
-export const pgPool = new Pool({
-  host: dbHost,
-  port: dbPort,
-  user: dbUser,
-  password: dbPassword,
-  database: dbName,
-  max: Number(process.env.PG_MAX_POOL || 20),
-  idleTimeoutMillis: 30000,
-});
+  const dbHost = process.env.DB_HOST || process.env.PG_HOST || '127.0.0.1';
+  const dbPort = Number(
+    process.env.DB_PORT ||
+      process.env.PG_PORT ||
+      (process.env.USE_PGBOUNCER === 'true' ? 6543 : 5432)
+  );
+  const dbUser = process.env.DB_USER || process.env.PG_USER || 'postgres';
+  const dbPassword = process.env.DB_PASSWORD || process.env.PG_PASSWORD || 'password';
+  const dbName = process.env.DB_NAME || process.env.PG_DATABASE || 'fintech_bse';
+  const isSsl =
+    process.env.DB_SSL === 'true' ||
+    (process.env.NODE_ENV === 'production' && dbHost !== '127.0.0.1' && dbHost !== 'localhost');
+
+  return {
+    host: dbHost,
+    port: dbPort,
+    user: dbUser,
+    password: dbPassword,
+    database: dbName,
+    ssl: isSsl ? { rejectUnauthorized: false } : undefined,
+    max: Number(process.env.PG_MAX_POOL || 20),
+    idleTimeoutMillis: 30000,
+  };
+};
+
+export const pgPool = new Pool(getPoolConfig());
 
 export interface Trade {
   trade_id: string;

@@ -33,9 +33,9 @@ app.use((req, res, next) => {
   next();
 });
 
-const redisHost = process.env.REDIS_HOST || '127.0.0.1';
-const redisPort = Number(process.env.REDIS_PORT || 6380);
-const redisPublisher = new Redis({ host: redisHost, port: redisPort });
+import { createRedisClient } from './redisConfig';
+
+const redisPublisher = createRedisClient();
 
 /**
  * Prometheus Metrics Scrape Endpoint
@@ -193,7 +193,7 @@ app.get('/api/stream', async (req: Request, res: Response) => {
   const attachPubSubFallback = () => {
     if (fallbackSubscriber) return;
     console.warn('[SSE Stream] ⚠️ Attaching Redis Pub/Sub fallback listener for client connection');
-    fallbackSubscriber = new Redis({ host: redisHost, port: redisPort });
+    fallbackSubscriber = createRedisClient();
     fallbackSubscriber.subscribe(TRADE_EVENTS_CHANNEL);
     fallbackSubscriber.on('message', (_channel, message) => {
       if (!res.writableEnded) {

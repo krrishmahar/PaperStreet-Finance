@@ -1,0 +1,33 @@
+# Render Blueprint Specification (v1)
+# Deploys Managed PostgreSQL and Express API + BSE Ingestion Worker + BSE Mock Server
+# Backed by Serverless Upstash Redis (configured via REDIS_URL)
+
+databases:
+  - name: fintech-postgres
+    databaseName: fintech_bse
+    user: postgres
+    plan: free # or starter
+    ipAllowList: [] # internal access only
+
+services:
+  # Express API Gateway + BullMQ Worker + BSE Mock (Unified Backend)
+  - type: web
+    name: arham-fintech-api
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npx concurrently "npx tsx src/server.ts" "npx tsx src/bse-mock/server.ts"
+    healthCheckPath: /api/ping
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 5000
+      - key: BSE_MOCK_URL
+        value: http://127.0.0.1:4000
+      - key: DATABASE_URL
+        fromDatabase:
+          name: fintech-postgres
+          property: connectionString
+      - key: REDIS_URL
+        sync: false # Set to your Upstash Redis connection string (rediss://default:...@...upstash.io:6379)

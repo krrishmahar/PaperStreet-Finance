@@ -1,17 +1,11 @@
 import { pgPool } from './index';
-import Redis from 'ioredis';
+import { createRedisClient } from '../redisConfig';
 import 'dotenv/config';
 
 async function flushSystem() {
   console.log('[Flush] 🗑️ Initiating complete system flush (PostgreSQL & Redis)...');
 
-  const redisHost = process.env.REDIS_HOST || '127.0.0.1';
-  const redisPort = Number(process.env.REDIS_PORT || 6380);
-  const redis = new Redis({
-    host: redisHost,
-    port: redisPort,
-    maxRetriesPerRequest: null,
-  });
+  const redis = createRedisClient({ maxRetriesPerRequest: null });
 
   try {
     // 1. Truncate PostgreSQL table
