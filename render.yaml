@@ -5,7 +5,7 @@
 databases:
   - name: fintech-postgres
     databaseName: fintech_bse
-    user: postgres
+    user: fintech_user
     plan: free # or starter
     ipAllowList: [] # internal access only
 
