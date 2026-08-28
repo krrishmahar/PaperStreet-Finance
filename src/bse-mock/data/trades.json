@@ -1,17 +1,22 @@
-]
-  // ... more realistic seeded trades (thousands) ...
-  }
-    "timestamp": "2024-08-27T08:00:05Z"
-    "quantity": 50,
-    "price": 3500.10,
-    "symbol": "TCS",
-    "tradeId": "T002",
-  {
-  },
-    "timestamp": "2024-08-27T08:00:00Z"
-    "quantity": 100,
-    "price": 2500.75,
-    "symbol": "RELIANCE",
-    "tradeId": "T001",
-  {
 [
+  {
+    "trade_id": "BSE_10000001",
+    "client_id": "CLI_1001",
+    "client_name": "BSE Client 1",
+    "symbol": "RELIANCE",
+    "quantity": 50,
+    "price": 2500.75,
+    "order_type": "BUY",
+    "trade_timestamp": "2024-08-27T08:00:00Z"
+  },
+  {
+    "trade_id": "BSE_10000002",
+    "client_id": "CLI_1002",
+    "client_name": "BSE Client 2",
+    "symbol": "TCS",
+    "quantity": 100,
+    "price": 3500.1,
+    "order_type": "SELL",
+    "trade_timestamp": "2024-08-27T08:00:05Z"
+  }
+]
