@@ -35,6 +35,7 @@ app.use((req, res, next) => {
 
 const redisHost = process.env.REDIS_HOST || '127.0.0.1';
 const redisPort = Number(process.env.REDIS_PORT || 6380);
+const redisPublisher = new Redis({ host: redisHost, port: redisPort });
 
 /**
  * Prometheus Metrics Scrape Endpoint
@@ -63,9 +64,9 @@ app.get('/api/ping', async (_req: Request, res: Response) => {
 
 app.get('/api/trades', async (req: Request, res: Response) => {
   try {
-    const limit = parseInt(req.query.limit as string, 10) || 100;
+    const limit = parseInt(req.query.limit as string, 10) || 200;
     const trades = await getRecentTrades(limit);
-    res.json({ success: true, data: trades });
+    res.json({ success: true, count: trades.length, trades });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -74,7 +75,7 @@ app.get('/api/trades', async (req: Request, res: Response) => {
 app.get('/api/metrics', async (_req: Request, res: Response) => {
   try {
     const metrics = await getTradeMetrics();
-    res.json({ success: true, data: metrics });
+    res.json({ success: true, metrics });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -107,6 +108,43 @@ app.post('/api/trigger-pull', async (req: Request, res: Response) => {
       success: true,
       message: 'BSE ingestion job dispatched to BullMQ worker',
       jobId: job.id,
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/flush', async (req: Request, res: Response) => {
+  try {
+    const client = await db.pgPool.connect();
+    try {
+      await client.query('TRUNCATE TABLE trades RESTART IDENTITY CASCADE;');
+    } finally {
+      client.release();
+    }
+
+    // Delete Redis Stream & channels
+    await redisPublisher.del('trades:stream');
+    await redisPublisher.del('trades:realtime:events');
+
+    // Clean BullMQ queue jobs
+    try {
+      await ingestionQueue.obliterate({ force: true });
+    } catch (_) {}
+
+    // Broadcast real-time FLUSH_ALL event to all active dashboards
+    await redisPublisher.publish(
+      'trades:realtime:events',
+      JSON.stringify({
+        event: 'FLUSH_ALL',
+        timestamp: Date.now(),
+        message: 'System database and Redis stream reset to clean initial state',
+      })
+    );
+
+    res.json({
+      success: true,
+      message: 'Database and Redis stream successfully flushed to clean initial state (0 entries)',
     });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });

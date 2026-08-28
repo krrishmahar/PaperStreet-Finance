@@ -20,6 +20,7 @@ import {
   Search,
   Settings2,
   SlidersHorizontal,
+  Trash2,
   Zap,
 } from 'lucide-react'
 import {
@@ -45,7 +46,7 @@ import { Separator } from '@/components/ui/separator'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { useDashboardStore, type Trade, type Metrics, type ConnectionStatus } from '@/store/useDashboardStore'
-import { useTradeHistory, useMetricsQuery, useTriggerBsePullMutation, useSseStream } from '@/store/queries'
+import { useTradeHistory, useMetricsQuery, useTriggerBsePullMutation, useFlushMutation, useSseStream } from '@/store/queries'
 import { computeDynamicTelemetry, type DeltaMetric } from '@/store/analytics'
 
 export type { Trade, Metrics, ConnectionStatus }
@@ -162,6 +163,7 @@ export function FintechDashboard() {
   const { data: initialTrades = [] } = useTradeHistory(200)
   const { data: serverMetrics } = useMetricsQuery()
   const triggerBsePullMutation = useTriggerBsePullMutation()
+  const flushMutation = useFlushMutation()
 
   // 3. Zustand Client Store for UI, Filters, and SSE Ingestion State
   const {
@@ -191,6 +193,17 @@ export function FintechDashboard() {
   // Trigger BSE Pull Ingestion Mutation
   const triggerBsePull = () => {
     triggerBsePullMutation.mutate(500)
+  }
+
+  // Flush PostgreSQL DB & Redis Stream to return to clean initial state (0 records)
+  const handleFlushSystem = () => {
+    if (
+      window.confirm(
+        '⚠️ Are you sure you want to flush all trades from PostgreSQL and Redis?\n\nThis will reset the platform to a clean initial state (0 entries).'
+      )
+    ) {
+      flushMutation.mutate()
+    }
   }
 
   // Combined Active Trades (Live SSE updates take precedence over initial snapshot)
@@ -356,6 +369,17 @@ export function FintechDashboard() {
               <RefreshCw className={`size-4 text-slate-950 ${isPulling ? 'animate-spin' : ''}`} />
               {isPulling ? 'Pulling in Background...' : 'Trigger BSE Pull'}
             </Button>
+
+            {/* Flush DB & Redis Action Button (Red) */}
+            <Button
+              onClick={handleFlushSystem}
+              disabled={flushMutation.isPending || isPulling}
+              className="h-10 px-3.5 bg-rose-600 hover:bg-rose-500 disabled:bg-slate-800 disabled:text-slate-500 text-white font-bold text-xs rounded-lg shadow-lg shadow-rose-950/40 border border-rose-500/40 transition gap-2"
+              title="Flush PostgreSQL database and Redis stream to clean initial state (0 entries)"
+            >
+              <Trash2 className={`size-4 text-white ${flushMutation.isPending ? 'animate-spin' : ''}`} />
+              {flushMutation.isPending ? 'Flushing...' : 'FLUSH'}
+            </Button>
           </div>
         </header>
 
@@ -379,49 +403,9 @@ export function FintechDashboard() {
         )}
 
         {/* ========================================================================= */}
-        {/* 2. TIME RANGE, SEARCH & CONTROLS                                         */}
+        {/* 2. KPI METRICS GRID                                                      */}
         {/* ========================================================================= */}
-        <div className="flex flex-col gap-3 py-4 lg:flex-row lg:items-center lg:justify-between">
-          <Tabs value={timeRange} onValueChange={setTimeRange}>
-            <TabsList className="bg-card border border-border/70">
-              <TabsTrigger value="5m">5m</TabsTrigger>
-              <TabsTrigger value="15m">15m</TabsTrigger>
-              <TabsTrigger value="1h">1h</TabsTrigger>
-              <TabsTrigger value="1d">1d</TabsTrigger>
-            </TabsList>
-          </Tabs>
-
-          <div className="flex items-center gap-2">
-            <div className="relative">
-              <Search className="absolute left-3 top-2.5 size-4 text-muted-foreground" />
-              <input
-                aria-label="Search trades"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search trades..."
-                className="h-9 w-52 rounded-md border border-input bg-card pl-9 pr-3 text-sm outline-none ring-emerald-500 focus:ring-2 transition"
-              />
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setIsLive(!isLive)}
-              className={`gap-2 border-border/80 ${isLive ? 'border-emerald-500/40 text-emerald-400 bg-emerald-500/10' : ''
-                }`}
-            >
-              {isLive ? <Pause className="size-3.5" /> : <Play className="size-3.5" />}
-              {isLive ? 'Live' : 'Paused'}
-            </Button>
-            <Button variant="outline" size="icon" aria-label="Dashboard settings">
-              <Settings2 className="size-4" />
-            </Button>
-          </div>
-        </div>
-
-        {/* ========================================================================= */}
-        {/* 3. KPI METRICS GRID                                                      */}
-        {/* ========================================================================= */}
-        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <section className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <Card className="panel border-border/80 bg-card/60">
             <CardContent className="p-4">
               <p className="text-xs text-muted-foreground font-medium">Total Ingested Trades</p>
@@ -604,9 +588,47 @@ export function FintechDashboard() {
         </section>
 
         {/* ========================================================================= */}
-        {/* 6. SYMBOL FILTER BAR & LIVE TRADE TABLE                                  */}
+        {/* 6. CONTROLS, SYMBOL FILTER & LIVE TRADE TABLE                            */}
         {/* ========================================================================= */}
         <section className="mt-4">
+          {/* Top Filter & Control Row (Time Range, Search & Stream Controls) */}
+          <div className="flex flex-col gap-3 pb-3 mb-2 lg:flex-row lg:items-center lg:justify-between">
+            <Tabs value={timeRange} onValueChange={setTimeRange}>
+              <TabsList className="bg-card border border-border/70">
+                <TabsTrigger value="5m">5m</TabsTrigger>
+                <TabsTrigger value="15m">15m</TabsTrigger>
+                <TabsTrigger value="1h">1h</TabsTrigger>
+                <TabsTrigger value="1d">1d</TabsTrigger>
+              </TabsList>
+            </Tabs>
+
+            <div className="flex items-center gap-2">
+              <div className="relative">
+                <Search className="absolute left-3 top-2.5 size-4 text-muted-foreground" />
+                <input
+                  aria-label="Search trades"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search trades (e.g. BSE_20006041)..."
+                  className="h-9 w-60 rounded-md border border-input bg-card pl-9 pr-3 text-sm outline-none ring-emerald-500 focus:ring-2 transition"
+                />
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setIsLive(!isLive)}
+                className={`gap-2 border-border/80 ${isLive ? 'border-emerald-500/40 text-emerald-400 bg-emerald-500/10' : ''
+                  }`}
+              >
+                {isLive ? <Pause className="size-3.5" /> : <Play className="size-3.5" />}
+                {isLive ? 'Live' : 'Paused'}
+              </Button>
+              <Button variant="outline" size="icon" aria-label="Dashboard settings">
+                <Settings2 className="size-4" />
+              </Button>
+            </div>
+          </div>
+
           {/* Symbol Filter Row */}
           <div className="flex items-center gap-2 overflow-x-auto pb-3 mb-3">
             <span className="text-xs text-muted-foreground mr-2 font-medium">Filter Symbol:</span>

@@ -12,7 +12,12 @@
     "start": "next start -p 3001",
     "bse:mock": "npx tsx src/bse-mock/server.ts",
     "server": "npx tsx src/server.ts",
-    "test:ui": "node load-tests/playwright_nextjs_ui_test.mjs"
+    "db:migrate": "npx tsx src/db/migrate.ts",
+    "db:flush": "npx tsx src/db/flush.ts",
+    "test:ui": "node load-tests/playwright_nextjs_ui_test.mjs",
+    "test:e2e": "node load-tests/playwright_nextjs_ui_test.mjs",
+    "test:chaos": "node load-tests/chaos-e2e.spec.mjs",
+    "test:load": "npx artillery run load-tests/load-test.yml"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",

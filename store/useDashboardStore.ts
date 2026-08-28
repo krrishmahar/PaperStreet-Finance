@@ -54,6 +54,7 @@ interface DashboardState {
   setLastPullTime: (time: string) => void
   setRealtimeTrades: (trades: Trade[] | ((prev: Trade[]) => Trade[])) => void
   prependChunkTrades: (newTrades: Trade[]) => void
+  flushStoreState: () => void
 }
 
 export const useDashboardStore = create<DashboardState>((set) => ({
@@ -98,5 +99,13 @@ export const useDashboardStore = create<DashboardState>((set) => ({
       newTrades.forEach((t) => map.set(t.trade_id, t))
       state.realtimeTrades.forEach((t) => map.set(t.trade_id, t))
       return { realtimeTrades: Array.from(map.values()).slice(0, 500) }
+    }),
+  flushStoreState: () =>
+    set({
+      realtimeTrades: [],
+      progress: 0,
+      isPulling: false,
+      lastEventId: null,
+      statusMessage: 'System Flushed (Clean Initial State)',
     }),
 }))

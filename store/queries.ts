@@ -229,6 +229,11 @@ export function useSseStream() {
           )
           queryClient.invalidateQueries({ queryKey: ['metrics'] })
           queryClient.invalidateQueries({ queryKey: ['trades'] })
+        } else if (data.event === 'FLUSH_ALL') {
+          useDashboardStore.getState().flushStoreState()
+          queryClient.setQueryData(['trades'], [])
+          queryClient.invalidateQueries({ queryKey: ['trades'] })
+          queryClient.invalidateQueries({ queryKey: ['metrics'] })
         }
       } catch (err) {
         // SSE comments (like : ping\n\n) or non-JSON payloads
@@ -273,3 +278,28 @@ export function useSseStream() {
     }
   }, [connectStream, setConnectionStatus])
 }
+
+export function useFlushMutation() {
+  const queryClient = useQueryClient()
+  const flushStoreState = useDashboardStore((s) => s.flushStoreState)
+
+  return useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`${API_BASE_URL}/api/flush`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      })
+      if (!res.ok) {
+        throw new Error(`Flush request failed with status: ${res.status}`)
+      }
+      return res.json()
+    },
+    onSuccess: () => {
+      flushStoreState()
+      queryClient.setQueryData(['trades'], [])
+      queryClient.invalidateQueries({ queryKey: ['trades'] })
+      queryClient.invalidateQueries({ queryKey: ['metrics'] })
+    },
+  })
+}
+
