@@ -3,6 +3,7 @@
 import React, { useState } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { LenisScrollProvider } from '@/lib/lenis-provider'
 
 export default function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(
@@ -19,7 +20,9 @@ export default function Providers({ children }: { children: React.ReactNode }) {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <TooltipProvider delayDuration={180}>{children}</TooltipProvider>
+      <LenisScrollProvider>
+        <TooltipProvider delayDuration={180}>{children}</TooltipProvider>
+      </LenisScrollProvider>
     </QueryClientProvider>
   )
 }

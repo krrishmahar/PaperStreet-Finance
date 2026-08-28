@@ -194,7 +194,7 @@ export function LiveTradeTable({
           </div>
         </CardHeader>
 
-        <div ref={tableContainerRef} className="overflow-x-auto overflow-y-auto max-h-135">
+        <div ref={tableContainerRef} data-lenis-prevent className="overflow-x-auto overflow-y-auto max-h-135">
           <table className="w-full min-w-212.5 text-left text-xs">
             <thead className="bg-slate-950/90 font-mono text-[11px] uppercase tracking-wider text-slate-400 border-b border-border/80 sticky top-0 backdrop-blur z-10 block w-full min-w-212.5">
               <tr className="flex items-center w-full">
