@@ -518,8 +518,8 @@ export function FintechDashboard() {
                 <PieChart>
                   <Pie
                     data={[
-                      { name: 'Healthy', value: 94 },
-                      { name: 'Retry', value: 6 },
+                      { name: 'Healthy', value: Math.max(1, telemetry.ingestionHealth.healthyCount) },
+                      { name: 'Retry', value: telemetry.ingestionHealth.retryCount },
                     ]}
                     dataKey="value"
                     innerRadius={48}
@@ -534,16 +534,18 @@ export function FintechDashboard() {
               </ChartContainer>
               <div className="flex flex-col gap-3">
                 <div>
-                  <p className="font-mono text-2xl font-bold text-white">99.94%</p>
+                  <p className="font-mono text-2xl font-bold text-white">
+                    {telemetry.ingestionHealth.availabilityFormatted}
+                  </p>
                   <p className="text-xs text-muted-foreground">availability</p>
                 </div>
                 <div className="flex items-center gap-2 text-xs">
                   <span className="size-2 rounded-full bg-emerald-500" />
-                  Healthy <span className="text-muted-foreground font-mono">9,400</span>
+                  Healthy <span className="text-muted-foreground font-mono">{telemetry.ingestionHealth.healthyCount.toLocaleString()}</span>
                 </div>
                 <div className="flex items-center gap-2 text-xs">
                   <span className="size-2 rounded-full bg-amber-500" />
-                  Retries <span className="text-muted-foreground font-mono">600</span>
+                  Retries <span className="text-muted-foreground font-mono">{telemetry.ingestionHealth.retryCount.toLocaleString()}</span>
                 </div>
               </div>
             </div>
@@ -564,7 +566,7 @@ export function FintechDashboard() {
               config={{ trades: { label: 'Trades', color: '#475569' } }}
               className="h-48 w-full"
             >
-              <BarChart data={symbolDistributionData}>
+              <BarChart data={telemetry.symbolDistribution.length > 0 ? telemetry.symbolDistribution : symbolDistributionData}>
                 <CartesianGrid vertical={false} stroke="rgba(255,255,255,0.08)" />
                 <XAxis dataKey="symbol" tickLine={false} axisLine={false} tick={{ fontSize: 10, fill: '#94a3b8' }} />
                 <YAxis hide />
@@ -582,7 +584,7 @@ export function FintechDashboard() {
               }}
               className="h-48 w-full"
             >
-              <LineChart data={DEFAULT_LATENCY_DATA}>
+              <LineChart data={telemetry.latencyData}>
                 <CartesianGrid vertical={false} stroke="rgba(255,255,255,0.08)" />
                 <XAxis dataKey="name" tickLine={false} axisLine={false} tick={{ fontSize: 10, fill: '#94a3b8' }} />
                 <YAxis tickLine={false} axisLine={false} tick={{ fontSize: 10, fill: '#94a3b8' }} />
