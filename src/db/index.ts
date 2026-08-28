@@ -24,15 +24,15 @@ export interface Trade {
 
 export async function insertTradesBatch(trades: Trade[]): Promise<number> {
   if (trades.length === 0) return 0;
-  
+
   const client = await pgPool.connect();
   try {
-    const values: any[] = [];
+    const values: Array<string | number> = [];
     const placeholders: string[] = [];
 
     trades.forEach((t, i) => {
-      const offset = i * 7;
-      placeholders.push(`($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7})`);
+      const offset = i * 8;
+      placeholders.push(`($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7}, $${offset + 8})`);
       values.push(t.trade_id, t.client_id, t.client_name, t.symbol, t.quantity, t.price, t.order_type, t.trade_timestamp);
     });
 
@@ -56,7 +56,11 @@ export async function getRecentTrades(limit = 100): Promise<Trade[]> {
     ORDER BY trade_timestamp DESC
     LIMIT $1
   `, [limit]);
-  return res.rows;
+  return res.rows.map((row) => ({
+    ...row,
+    quantity: Number(row.quantity),
+    price: Number(row.price),
+  }));
 }
 
 export async function getTradeMetrics() {
