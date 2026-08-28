@@ -3,6 +3,7 @@ import cors from 'cors';
 import Redis from 'ioredis';
 import db, { getRecentTrades, getTradeMetrics } from './db/index';
 import { ingestionQueue, TRADE_EVENTS_CHANNEL, REDIS_STREAM_KEY } from './ingestion/worker';
+import { redisStreamWrapper } from './redisStreamWrapper';
 import 'dotenv/config';
 
 const app = express();
@@ -99,27 +100,35 @@ app.get('/api/stream', async (req: Request, res: Response) => {
     (req.query.lastEventId as string) ||
     null;
 
-  const redisStreamReader = new Redis({ host: redisHost, port: redisPort });
+  const redisStreamReader = redisStreamWrapper.createStreamReader();
   let isStreaming = true;
   let lastReadId = '$';
+  let fallbackSubscriber: Redis | null = null;
+
+  // Fallback Pub/Sub subscriber if stream read fails
+  const attachPubSubFallback = () => {
+    if (fallbackSubscriber) return;
+    console.warn('[SSE Stream] ⚠️ Attaching Redis Pub/Sub fallback listener for client connection');
+    fallbackSubscriber = new Redis({ host: redisHost, port: redisPort });
+    fallbackSubscriber.subscribe(TRADE_EVENTS_CHANNEL);
+    fallbackSubscriber.on('message', (_channel, message) => {
+      if (!res.writableEnded) {
+        res.write(`data: ${message}\n\n`);
+      }
+    });
+  };
 
   // If client provided a Last-Event-ID, replay all missed events from Redis Streams
   if (lastEventId) {
     try {
       console.log(`[SSE Stream] Replaying missed Redis Stream events starting after: ${lastEventId}`);
-      const replayEntries = await redisStreamReader.xrange(
-        REDIS_STREAM_KEY,
-        `(${lastEventId}`,
-        '+'
-      );
+      const missedEvents = await redisStreamWrapper.readMissedEvents(redisStreamReader, lastEventId);
 
-      if (replayEntries && replayEntries.length > 0) {
-        console.log(`[SSE Stream] Replaying ${replayEntries.length} missed events to client`);
-        for (const [entryId, fields] of replayEntries) {
-          lastReadId = entryId;
-          const payloadIdx = fields.indexOf('payload');
-          const payload = payloadIdx !== -1 ? fields[payloadIdx + 1] : fields[1];
-          res.write(`id: ${entryId}\ndata: ${payload}\n\n`);
+      if (missedEvents.length > 0) {
+        console.log(`[SSE Stream] Replaying ${missedEvents.length} missed events to client`);
+        for (const event of missedEvents) {
+          lastReadId = event.id;
+          res.write(`id: ${event.id}\ndata: ${event.payload}\n\n`);
         }
       } else {
         lastReadId = lastEventId;
@@ -154,6 +163,7 @@ app.get('/api/stream', async (req: Request, res: Response) => {
         }
       } catch (err: any) {
         if (isStreaming) {
+          attachPubSubFallback();
           await new Promise((resolve) => setTimeout(resolve, 1000));
         }
       }
@@ -166,6 +176,10 @@ app.get('/api/stream', async (req: Request, res: Response) => {
     isStreaming = false;
     clearInterval(heartbeatInterval);
     redisStreamReader.quit();
+    if (fallbackSubscriber) {
+      fallbackSubscriber.unsubscribe();
+      fallbackSubscriber.quit();
+    }
     res.end();
   });
 });

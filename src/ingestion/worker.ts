@@ -2,6 +2,7 @@ import Redis from 'ioredis';
 import { Queue, Worker, type Job } from 'bullmq';
 import CircuitBreaker from 'opossum';
 import { insertTradesBatch, type Trade } from '../db/index';
+import { redisStreamWrapper, REDIS_STREAM_KEY, TRADE_EVENTS_CHANNEL } from '../redisStreamWrapper';
 import 'dotenv/config';
 
 const redisHost = process.env.REDIS_HOST || '127.0.0.1';
@@ -19,25 +20,13 @@ export const redisPublisher = new Redis({
 });
 
 export const INGESTION_QUEUE_NAME = 'bse-trade-ingestion';
-export const TRADE_EVENTS_CHANNEL = 'trades:realtime:events';
-export const REDIS_STREAM_KEY = 'trades:stream';
+export { REDIS_STREAM_KEY, TRADE_EVENTS_CHANNEL };
 
 /**
- * Publishes events to Redis Streams (for resumability & replay) and Pub/Sub (for real-time fan-out)
+ * Publishes events to Redis Streams and Pub/Sub via RedisStreamWrapper
  */
 export async function publishStreamEvent(eventPayload: object): Promise<string> {
-  const jsonStr = JSON.stringify(eventPayload);
-  const streamId = await redisPublisher.xadd(
-    REDIS_STREAM_KEY,
-    'MAXLEN',
-    '~',
-    50000,
-    '*',
-    'payload',
-    jsonStr
-  );
-  await redisPublisher.publish(TRADE_EVENTS_CHANNEL, jsonStr);
-  return streamId as string;
+  return redisStreamWrapper.publishEvent(eventPayload);
 }
 
 export const ingestionQueue = new Queue(INGESTION_QUEUE_NAME, {

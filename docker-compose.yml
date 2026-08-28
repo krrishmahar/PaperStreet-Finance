@@ -21,7 +21,7 @@ services:
       - ./src/db/schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
 
   pgbouncer:
-    image: edoboor/pgbouncer:latest
+    image: edoburu/pgbouncer:latest
     container_name: fintech-pgbouncer
     restart: unless-stopped
     ports:
