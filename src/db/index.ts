@@ -22,6 +22,16 @@ export interface Trade {
   trade_timestamp: string;
 }
 
+export async function ping(): Promise<boolean> {
+  const client = await pgPool.connect();
+  try {
+    await client.query('SELECT 1');
+    return true;
+  } finally {
+    client.release();
+  }
+}
+
 export async function insertTradesBatch(trades: Trade[]): Promise<number> {
   if (trades.length === 0) return 0;
 
@@ -75,3 +85,13 @@ export async function getTradeMetrics() {
   `);
   return res.rows[0];
 }
+
+const db = {
+  pgPool,
+  ping,
+  insertTradesBatch,
+  getRecentTrades,
+  getTradeMetrics,
+};
+
+export default db;
