@@ -20,6 +20,15 @@ export interface Trade {
   price: number;
   order_type: 'BUY' | 'SELL';
   trade_timestamp: string;
+  ingested_at?: string;
+  updated_at?: string;
+}
+
+export interface BatchInsertResult {
+  totalProcessed: number;
+  insertedCount: number;
+  amendedCount: number;
+  amendedTradeIds: string[];
 }
 
 export async function ping(): Promise<boolean> {
@@ -32,8 +41,37 @@ export async function ping(): Promise<boolean> {
   }
 }
 
-export async function insertTradesBatch(trades: Trade[]): Promise<number> {
-  if (trades.length === 0) return 0;
+export async function initDb(): Promise<void> {
+  const client = await pgPool.connect();
+  try {
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS trades (
+        trade_id VARCHAR(64) PRIMARY KEY,
+        client_id VARCHAR(64) NOT NULL,
+        client_name VARCHAR(128) NOT NULL,
+        symbol VARCHAR(32) NOT NULL,
+        quantity INTEGER NOT NULL,
+        price NUMERIC(12, 2) NOT NULL,
+        order_type VARCHAR(16) NOT NULL,
+        trade_timestamp TIMESTAMP WITH TIME ZONE NOT NULL,
+        ingested_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );
+      ALTER TABLE trades ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+      CREATE INDEX IF NOT EXISTS idx_trades_symbol ON trades(symbol);
+      CREATE INDEX IF NOT EXISTS idx_trades_timestamp ON trades(trade_timestamp DESC);
+      CREATE INDEX IF NOT EXISTS idx_trades_client ON trades(client_id);
+      CREATE INDEX IF NOT EXISTS idx_trades_updated_at ON trades(updated_at DESC);
+    `);
+  } finally {
+    client.release();
+  }
+}
+
+export async function insertTradesBatch(trades: Trade[]): Promise<BatchInsertResult> {
+  if (trades.length === 0) {
+    return { totalProcessed: 0, insertedCount: 0, amendedCount: 0, amendedTradeIds: [] };
+  }
 
   const client = await pgPool.connect();
   try {
@@ -42,18 +80,53 @@ export async function insertTradesBatch(trades: Trade[]): Promise<number> {
 
     trades.forEach((t, i) => {
       const offset = i * 8;
-      placeholders.push(`($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7}, $${offset + 8})`);
-      values.push(t.trade_id, t.client_id, t.client_name, t.symbol, t.quantity, t.price, t.order_type, t.trade_timestamp);
+      placeholders.push(
+        `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7}, $${offset + 8}, NOW())`
+      );
+      values.push(
+        t.trade_id,
+        t.client_id,
+        t.client_name,
+        t.symbol,
+        t.quantity,
+        t.price,
+        t.order_type,
+        t.trade_timestamp
+      );
     });
 
     const query = `
-      INSERT INTO trades (trade_id, client_id, client_name, symbol, quantity, price, order_type, trade_timestamp)
+      INSERT INTO trades (trade_id, client_id, client_name, symbol, quantity, price, order_type, trade_timestamp, updated_at)
       VALUES ${placeholders.join(', ')}
-      ON CONFLICT (trade_id) DO NOTHING;
+      ON CONFLICT (trade_id) DO UPDATE 
+      SET price = EXCLUDED.price,
+          quantity = EXCLUDED.quantity,
+          order_type = EXCLUDED.order_type,
+          updated_at = NOW()
+      WHERE trades.trade_timestamp <= EXCLUDED.trade_timestamp
+      RETURNING (xmax = 0) AS is_inserted, trade_id;
     `;
 
     const res = await client.query(query, values);
-    return res.rowCount || 0;
+    let insertedCount = 0;
+    let amendedCount = 0;
+    const amendedTradeIds: string[] = [];
+
+    res.rows.forEach((row) => {
+      if (row.is_inserted) {
+        insertedCount++;
+      } else {
+        amendedCount++;
+        amendedTradeIds.push(row.trade_id);
+      }
+    });
+
+    return {
+      totalProcessed: res.rowCount || 0,
+      insertedCount,
+      amendedCount,
+      amendedTradeIds,
+    };
   } finally {
     client.release();
   }
@@ -61,7 +134,7 @@ export async function insertTradesBatch(trades: Trade[]): Promise<number> {
 
 export async function getRecentTrades(limit = 100): Promise<Trade[]> {
   const res = await pgPool.query(`
-    SELECT trade_id, client_id, client_name, symbol, quantity, price, order_type, trade_timestamp
+    SELECT trade_id, client_id, client_name, symbol, quantity, price, order_type, trade_timestamp, ingested_at, updated_at
     FROM trades
     ORDER BY trade_timestamp DESC
     LIMIT $1
@@ -89,6 +162,7 @@ export async function getTradeMetrics() {
 const db = {
   pgPool,
   ping,
+  initDb,
   insertTradesBatch,
   getRecentTrades,
   getTradeMetrics,

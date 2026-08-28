@@ -87,6 +87,17 @@ app.get('/api/stream', (req: Request, res: Response) => {
   });
 });
 
-app.listen(PORT, () => {
-  console.log(`[Fintech Backend] Server listening at http://localhost:${PORT}`);
-});
+async function startServer() {
+  try {
+    await db.initDb();
+    console.log('[Fintech Backend] Database schema and temporal indexes initialized');
+  } catch (err) {
+    console.error('[Fintech Backend] Database initialization warning:', err);
+  }
+
+  app.listen(PORT, () => {
+    console.log(`[Fintech Backend] Server listening at http://localhost:${PORT}`);
+  });
+}
+
+startServer();

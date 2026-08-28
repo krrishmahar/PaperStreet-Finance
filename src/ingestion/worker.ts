@@ -61,8 +61,14 @@ export const ingestionWorker = new Worker<IngestionJobData>(
 
       const trades = payload.data;
       if (trades && trades.length > 0) {
-        await insertTradesBatch(trades);
-        totalIngested += trades.length;
+        const result = await insertTradesBatch(trades);
+        totalIngested += result.insertedCount;
+
+        if (result.amendedCount > 0) {
+          console.log(
+            `[IngestionWorker] ⚠️ Overwritten/Amended ${result.amendedCount} trades via temporal check: [${result.amendedTradeIds.slice(0, 5).join(', ')}${result.amendedCount > 5 ? '...' : ''}]`
+          );
+        }
 
         await redisPublisher.publish(
           TRADE_EVENTS_CHANNEL,
@@ -71,13 +77,15 @@ export const ingestionWorker = new Worker<IngestionJobData>(
             trades,
             progress: payload.meta.progressPercent,
             totalIngested,
+            insertedCount: result.insertedCount,
+            amendedCount: result.amendedCount,
             totalRecords: payload.meta.totalRecords,
             timestamp: Date.now(),
           })
         );
 
         console.log(
-          `[IngestionWorker] Ingested chunk ${cursor} -> ${cursor + trades.length} (${payload.meta.progressPercent}%)`
+          `[IngestionWorker] Chunk ${cursor} -> ${cursor + trades.length} (${payload.meta.progressPercent}%): ${result.insertedCount} inserted, ${result.amendedCount} amended`
         );
       }
 
