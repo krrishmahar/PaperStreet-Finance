@@ -20,6 +20,25 @@ export const redisPublisher = new Redis({
 
 export const INGESTION_QUEUE_NAME = 'bse-trade-ingestion';
 export const TRADE_EVENTS_CHANNEL = 'trades:realtime:events';
+export const REDIS_STREAM_KEY = 'trades:stream';
+
+/**
+ * Publishes events to Redis Streams (for resumability & replay) and Pub/Sub (for real-time fan-out)
+ */
+export async function publishStreamEvent(eventPayload: object): Promise<string> {
+  const jsonStr = JSON.stringify(eventPayload);
+  const streamId = await redisPublisher.xadd(
+    REDIS_STREAM_KEY,
+    'MAXLEN',
+    '~',
+    50000,
+    '*',
+    'payload',
+    jsonStr
+  );
+  await redisPublisher.publish(TRADE_EVENTS_CHANNEL, jsonStr);
+  return streamId as string;
+}
 
 export const ingestionQueue = new Queue(INGESTION_QUEUE_NAME, {
   connection: redisConnection,
@@ -128,20 +147,17 @@ export const ingestionWorker = new Worker<IngestionJobData>(
           );
         }
 
-        // 2. Publish Real-time chunk notification
-        await redisPublisher.publish(
-          TRADE_EVENTS_CHANNEL,
-          JSON.stringify({
-            event: 'TRADES_CHUNK_INGESTED',
-            trades,
-            progress: payload.meta.progressPercent,
-            totalIngested,
-            insertedCount: result.insertedCount,
-            amendedCount: result.amendedCount,
-            totalRecords: payload.meta.totalRecords,
-            timestamp: Date.now(),
-          })
-        );
+        // 2. Publish Real-time chunk notification via Redis Streams & Pub/Sub
+        await publishStreamEvent({
+          event: 'TRADES_CHUNK_INGESTED',
+          trades,
+          progress: payload.meta.progressPercent,
+          totalIngested,
+          insertedCount: result.insertedCount,
+          amendedCount: result.amendedCount,
+          totalRecords: payload.meta.totalRecords,
+          timestamp: Date.now(),
+        });
 
         console.log(
           `[IngestionWorker] Chunk ${cursor} -> ${cursor + trades.length} (${payload.meta.progressPercent}%): ${result.insertedCount} inserted, ${result.amendedCount} amended`
@@ -162,14 +178,11 @@ export const ingestionWorker = new Worker<IngestionJobData>(
       await new Promise((r) => setTimeout(r, jitterMs));
     }
 
-    await redisPublisher.publish(
-      TRADE_EVENTS_CHANNEL,
-      JSON.stringify({
-        event: 'INGESTION_COMPLETED',
-        totalIngested,
-        timestamp: Date.now(),
-      })
-    );
+    await publishStreamEvent({
+      event: 'INGESTION_COMPLETED',
+      totalIngested,
+      timestamp: Date.now(),
+    });
 
     console.log(`[IngestionWorker] ✓ Completed ingestion of ${totalIngested} BSE trades.`);
     return { success: true, totalIngested };

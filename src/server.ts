@@ -2,7 +2,7 @@ import express, { type Request, type Response } from 'express';
 import cors from 'cors';
 import Redis from 'ioredis';
 import db, { getRecentTrades, getTradeMetrics } from './db/index';
-import { ingestionQueue, TRADE_EVENTS_CHANNEL } from './ingestion/worker';
+import { ingestionQueue, TRADE_EVENTS_CHANNEL, REDIS_STREAM_KEY } from './ingestion/worker';
 import 'dotenv/config';
 
 const app = express();
@@ -76,27 +76,96 @@ app.post('/api/trigger-pull', async (req: Request, res: Response) => {
   }
 });
 
-app.get('/api/stream', (req: Request, res: Response) => {
+app.get('/api/stream', async (req: Request, res: Response) => {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.flushHeaders();
 
+  // Send initial keepalive
   res.write(': keepalive\n\n');
 
-  const subscriber = new Redis({ host: redisHost, port: redisPort });
-  subscriber.subscribe(TRADE_EVENTS_CHANNEL);
-
-  subscriber.on('message', (channel, message) => {
-    if (channel === TRADE_EVENTS_CHANNEL) {
-      res.write(`data: ${message}\n\n`);
+  // Heartbeat comment (: ping\n\n) emitted every 15s to bypass 30s proxy/ALB timeout kill-switches
+  const heartbeatInterval = setInterval(() => {
+    if (!res.writableEnded) {
+      res.write(': ping\n\n');
     }
-  });
+  }, 15000);
+
+  // Read Last-Event-ID header or query param
+  const lastEventId =
+    (req.headers['last-event-id'] as string) ||
+    (req.query.lastEventId as string) ||
+    null;
+
+  const redisStreamReader = new Redis({ host: redisHost, port: redisPort });
+  let isStreaming = true;
+  let lastReadId = '$';
+
+  // If client provided a Last-Event-ID, replay all missed events from Redis Streams
+  if (lastEventId) {
+    try {
+      console.log(`[SSE Stream] Replaying missed Redis Stream events starting after: ${lastEventId}`);
+      const replayEntries = await redisStreamReader.xrange(
+        REDIS_STREAM_KEY,
+        `(${lastEventId}`,
+        '+'
+      );
+
+      if (replayEntries && replayEntries.length > 0) {
+        console.log(`[SSE Stream] Replaying ${replayEntries.length} missed events to client`);
+        for (const [entryId, fields] of replayEntries) {
+          lastReadId = entryId;
+          const payloadIdx = fields.indexOf('payload');
+          const payload = payloadIdx !== -1 ? fields[payloadIdx + 1] : fields[1];
+          res.write(`id: ${entryId}\ndata: ${payload}\n\n`);
+        }
+      } else {
+        lastReadId = lastEventId;
+      }
+    } catch (err) {
+      console.warn('[SSE Stream] Warning during Redis Stream replay:', err);
+      lastReadId = '$';
+    }
+  }
+
+  // Continuous XREAD loop for live real-time pushing
+  const startStreamLoop = async () => {
+    while (isStreaming && !res.writableEnded) {
+      try {
+        const streamResults = await redisStreamReader.xread(
+          'BLOCK',
+          3000,
+          'STREAMS',
+          REDIS_STREAM_KEY,
+          lastReadId
+        );
+
+        if (streamResults && Array.isArray(streamResults)) {
+          for (const [, entries] of streamResults) {
+            for (const [entryId, fields] of entries) {
+              lastReadId = entryId;
+              const payloadIdx = fields.indexOf('payload');
+              const payload = payloadIdx !== -1 ? fields[payloadIdx + 1] : fields[1];
+              res.write(`id: ${entryId}\ndata: ${payload}\n\n`);
+            }
+          }
+        }
+      } catch (err: any) {
+        if (isStreaming) {
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+        }
+      }
+    }
+  };
+
+  startStreamLoop();
 
   req.on('close', () => {
-    subscriber.unsubscribe();
-    subscriber.quit();
+    isStreaming = false;
+    clearInterval(heartbeatInterval);
+    redisStreamReader.quit();
     res.end();
   });
 });
