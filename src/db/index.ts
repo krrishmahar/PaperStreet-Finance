@@ -1,13 +1,19 @@
 import { Pool } from 'pg';
 import 'dotenv/config';
 
+const dbHost = process.env.DB_HOST || process.env.PG_HOST || '127.0.0.1';
+const dbPort = Number(process.env.DB_PORT || process.env.PG_PORT || (process.env.USE_PGBOUNCER === 'true' ? 6543 : 5432));
+const dbUser = process.env.DB_USER || process.env.PG_USER || 'postgres';
+const dbPassword = process.env.DB_PASSWORD || process.env.PG_PASSWORD || 'password';
+const dbName = process.env.DB_NAME || process.env.PG_DATABASE || 'fintech_bse';
+
 export const pgPool = new Pool({
-  host: process.env.PG_HOST || '127.0.0.1',
-  port: Number(process.env.PG_PORT || 5432),
-  user: process.env.PG_USER || 'postgres',
-  password: process.env.PG_PASSWORD || 'password',
-  database: process.env.PG_DATABASE || 'fintech_bse',
-  max: 20,
+  host: dbHost,
+  port: dbPort,
+  user: dbUser,
+  password: dbPassword,
+  database: dbName,
+  max: Number(process.env.PG_MAX_POOL || 20),
   idleTimeoutMillis: 30000,
 });
 
