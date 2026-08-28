@@ -279,6 +279,7 @@ npm run test:chaos
 
 ## 👨‍💻 Submission Info
 - **Project**: Arham Fintech Real-Time BSE Trade Ingestion Platform
-- **Author**: Technical Assessment Submission
+- **Author**: Krrish Mahar
+- **Email**: krrishmahar5@gmail.com
 - **Target**: `chirag.g@arhamfintech.ai`
 - **CC**: `hr@arhamfintech.ai`
