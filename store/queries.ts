@@ -97,6 +97,10 @@ export function useSseStream() {
   const watchdogTimerRef = useRef<NodeJS.Timeout | null>(null)
   const isMountedRef = useRef(true)
 
+  // 60FPS Micro-Batching Buffer using requestAnimationFrame
+  const pendingTradesBufferRef = useRef<Trade[]>([])
+  const rafHandleRef = useRef<number | null>(null)
+
   const {
     setIsPulling,
     setProgress,
@@ -107,6 +111,16 @@ export function useSseStream() {
     setLastPullTime,
     prependChunkTrades,
   } = useDashboardStore()
+
+  // Flush buffered trades to React state synchronized with browser refresh rate (<= 16ms)
+  const flushTradeBuffer = useCallback(() => {
+    if (pendingTradesBufferRef.current.length > 0) {
+      const tradesToFlush = pendingTradesBufferRef.current
+      pendingTradesBufferRef.current = []
+      prependChunkTrades(tradesToFlush)
+    }
+    rafHandleRef.current = null
+  }, [prependChunkTrades])
 
   // Reset watchdog timer on any event or heartbeat
   const resetWatchdog = useCallback(() => {
@@ -179,8 +193,13 @@ export function useSseStream() {
             })
           )
 
+          // Enqueue incoming trades into the RAF micro-batch buffer
           if (Array.isArray(data.trades) && data.trades.length > 0) {
-            prependChunkTrades(data.trades)
+            pendingTradesBufferRef.current.push(...data.trades)
+
+            if (rafHandleRef.current === null) {
+              rafHandleRef.current = requestAnimationFrame(flushTradeBuffer)
+            }
           }
 
           // Refresh metrics in background
@@ -216,13 +235,13 @@ export function useSseStream() {
   }, [
     queryClient,
     resetWatchdog,
+    flushTradeBuffer,
     setConnectionStatus,
     setLastEventId,
     setIsPulling,
     setProgress,
     setStatusMessage,
     setLastPullTime,
-    prependChunkTrades,
   ])
 
   useEffect(() => {
@@ -233,6 +252,9 @@ export function useSseStream() {
       isMountedRef.current = false
       if (watchdogTimerRef.current) {
         clearTimeout(watchdogTimerRef.current)
+      }
+      if (rafHandleRef.current !== null) {
+        cancelAnimationFrame(rafHandleRef.current)
       }
       if (eventSourceRef.current) {
         eventSourceRef.current.close()

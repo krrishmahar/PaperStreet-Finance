@@ -1,6 +1,8 @@
 'use client'
 
-import React, { useMemo, useState, useEffect } from 'react'
+import React, { useMemo, useState, useEffect, useRef } from 'react'
+import { useVirtualizer } from '@tanstack/react-virtual'
+import { TradingViewChart, type TradingViewChartRef } from '@/components/TradingViewChart'
 import {
   Activity,
   ArrowDownRight,
@@ -147,6 +149,9 @@ export function FintechDashboard() {
     setMounted(true)
   }, [])
 
+  const chartRef = useRef<TradingViewChartRef>(null)
+  const tableContainerRef = useRef<HTMLDivElement>(null)
+
   // Trigger BSE Pull Ingestion Mutation
   const triggerBsePull = () => {
     triggerBsePullMutation.mutate(500)
@@ -169,6 +174,14 @@ export function FintechDashboard() {
       return matchesSymbol && matchesQuery
     })
   }, [trades, filterSymbol, searchQuery])
+
+  // @tanstack/react-virtual: Virtualize table rendering for visible viewport items (60FPS)
+  const rowVirtualizer = useVirtualizer({
+    count: filteredTrades.length,
+    getScrollElement: () => tableContainerRef.current,
+    estimateSize: () => 48,
+    overscan: 10,
+  })
 
   // Dynamic Symbol List
   const symbols = useMemo(() => {
@@ -441,50 +454,20 @@ export function FintechDashboard() {
         <section className="mt-3 grid gap-3 xl:grid-cols-3">
           <div className="xl:col-span-2">
             <Panel
-              title="Turnover & trade flow"
-              subtitle="₹ Crores · aggregated by 15-minute interval"
+              title="Turnover & trade flow (TradingView Canvas)"
+              subtitle="₹ Crores · Imperative 60FPS canvas engine · 15-minute intervals"
               action={
-                <Button variant="ghost" size="icon" aria-label="Add panel">
-                  <Plus className="size-4" />
-                </Button>
+                <Badge
+                  variant="outline"
+                  className="border-emerald-500/30 bg-emerald-500/10 text-emerald-400 text-[10px] font-mono"
+                >
+                  Canvas 60FPS
+                </Badge>
               }
             >
-              <ChartContainer
-                config={{
-                  turnover: { label: 'Turnover', color: '#10b981' },
-                  buys: { label: 'Buy flow', color: '#38bdf8' },
-                }}
-                className="h-64 w-full"
-              >
-                <AreaChart data={flowData}>
-                  <defs>
-                    <linearGradient id="turnoverGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.35} />
-                      <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid vertical={false} stroke="rgba(255,255,255,0.08)" />
-                  <XAxis dataKey="time" tickLine={false} axisLine={false} tick={{ fontSize: 10, fill: '#94a3b8' }} />
-                  <YAxis tickLine={false} axisLine={false} tick={{ fontSize: 10, fill: '#94a3b8' }} />
-                  <RechartsTooltip content={<ChartTooltipContent />} />
-                  <Area
-                    type="monotone"
-                    dataKey="value"
-                    name="turnover"
-                    stroke="#10b981"
-                    fill="url(#turnoverGrad)"
-                    strokeWidth={2}
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="buys"
-                    name="buys"
-                    stroke="#38bdf8"
-                    fill="none"
-                    strokeDasharray="4 4"
-                  />
-                </AreaChart>
-              </ChartContainer>
+              <div className="pt-2">
+                <TradingViewChart ref={chartRef} height={260} />
+              </div>
             </Panel>
           </div>
 
@@ -629,39 +612,54 @@ export function FintechDashboard() {
               </div>
             </CardHeader>
 
-            <div className="overflow-x-auto max-h-150">
+            <div ref={tableContainerRef} className="overflow-x-auto overflow-y-auto max-h-135">
               <table className="w-full min-w-212.5 text-left text-xs">
-                <thead className="bg-slate-950/90 font-mono text-[11px] uppercase tracking-wider text-slate-400 border-b border-border/80 sticky top-0 backdrop-blur z-10">
-                  <tr>
-                    <th className="px-4 py-3 font-medium">Trade ID</th>
-                    <th className="px-4 py-3 font-medium">Timestamp</th>
-                    <th className="px-4 py-3 font-medium">Symbol</th>
-                    <th className="px-4 py-3 font-medium">Client</th>
-                    <th className="px-4 py-3 font-medium">Type</th>
-                    <th className="px-4 py-3 font-medium text-right">Quantity</th>
-                    <th className="px-4 py-3 font-medium text-right">Price (₹)</th>
-                    <th className="px-4 py-3 font-medium text-right">Total Value (₹)</th>
+                <thead className="bg-slate-950/90 font-mono text-[11px] uppercase tracking-wider text-slate-400 border-b border-border/80 sticky top-0 backdrop-blur z-10 block w-full min-w-212.5">
+                  <tr className="flex items-center w-full">
+                    <th className="w-[14%] px-4 py-3 font-medium">Trade ID</th>
+                    <th className="w-[12%] px-4 py-3 font-medium">Timestamp</th>
+                    <th className="w-[12%] px-4 py-3 font-medium">Symbol</th>
+                    <th className="w-[20%] px-4 py-3 font-medium">Client</th>
+                    <th className="w-[10%] px-4 py-3 font-medium">Type</th>
+                    <th className="w-[10%] px-4 py-3 font-medium text-right">Quantity</th>
+                    <th className="w-[10%] px-4 py-3 font-medium text-right">Price (₹)</th>
+                    <th className="w-[12%] px-4 py-3 font-medium text-right">Total Value (₹)</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-border/50 font-mono">
+                <tbody
+                  className="font-mono block w-full min-w-212.5 relative"
+                  style={{
+                    height: `${Math.max(filteredTrades.length > 0 ? rowVirtualizer.getTotalSize() : 80, 80)}px`,
+                  }}
+                >
                   {filteredTrades.length === 0 ? (
-                    <tr>
-                      <td colSpan={8} className="text-center py-8 text-muted-foreground">
+                    <tr className="flex w-full">
+                      <td className="w-full text-center py-8 text-muted-foreground">
                         No trades found matching criteria. Click &quot;Trigger BSE Pull&quot; to fetch real-time records.
                       </td>
                     </tr>
                   ) : (
-                    filteredTrades.map((t) => {
+                    rowVirtualizer.getVirtualItems().map((virtualRow) => {
+                      const t = filteredTrades[virtualRow.index]
+                      if (!t) return null
                       const totalVal = t.quantity * t.price
                       return (
                         <tr
                           key={t.trade_id}
-                          className="transition-colors hover:bg-muted/30"
+                          style={{
+                            position: 'absolute',
+                            top: 0,
+                            left: 0,
+                            width: '100%',
+                            height: `${virtualRow.size}px`,
+                            transform: `translateY(${virtualRow.start}px)`,
+                          }}
+                          className="flex items-center border-b border-border/40 hover:bg-slate-900/60 transition-colors"
                         >
-                          <td className="px-4 py-3 font-mono text-xs text-slate-300 font-semibold">
+                          <td className="w-[14%] px-4 py-3 font-mono text-xs text-slate-300 font-semibold truncate">
                             {t.trade_id}
                           </td>
-                          <td className="px-4 py-3 font-mono text-xs text-slate-400">
+                          <td className="w-[12%] px-4 py-3 font-mono text-xs text-slate-400 truncate">
                             {new Date(t.trade_timestamp).toLocaleTimeString('en-US', {
                               hour: '2-digit',
                               minute: '2-digit',
@@ -669,15 +667,15 @@ export function FintechDashboard() {
                               hour12: true,
                             })}
                           </td>
-                          <td className="px-4 py-3">
+                          <td className="w-[12%] px-4 py-3 truncate">
                             <span className="px-2 py-0.5 rounded font-bold bg-sky-500/10 text-sky-400 border border-sky-500/30 text-xs">
                               {t.symbol}
                             </span>
                           </td>
-                          <td className="px-4 py-3 font-sans text-xs text-slate-300">
+                          <td className="w-[20%] px-4 py-3 font-sans text-xs text-slate-300 truncate">
                             {t.client_name}
                           </td>
-                          <td className="px-4 py-3">
+                          <td className="w-[10%] px-4 py-3 truncate">
                             <span
                               className={`px-2.5 py-0.5 rounded font-bold text-[10px] inline-flex items-center gap-1 ${t.order_type === 'BUY'
                                 ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/40'
@@ -692,13 +690,13 @@ export function FintechDashboard() {
                               {t.order_type}
                             </span>
                           </td>
-                          <td className="px-4 py-3 text-right font-mono text-xs text-slate-200">
+                          <td className="w-[10%] px-4 py-3 text-right font-mono text-xs text-slate-200">
                             {t.quantity.toLocaleString()}
                           </td>
-                          <td className="px-4 py-3 text-right font-mono text-xs text-slate-200">
+                          <td className="w-[10%] px-4 py-3 text-right font-mono text-xs text-slate-200">
                             ₹{t.price.toFixed(2)}
                           </td>
-                          <td className="px-4 py-3 text-right font-mono text-xs font-semibold text-emerald-400">
+                          <td className="w-[12%] px-4 py-3 text-right font-mono text-xs font-semibold text-emerald-400">
                             ₹{totalVal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
                           </td>
                         </tr>
