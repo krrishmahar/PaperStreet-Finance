@@ -46,11 +46,25 @@ app.get('/api/metrics', async (_req: Request, res: Response) => {
 app.post('/api/trigger-pull', async (req: Request, res: Response) => {
   try {
     const chunkSize = parseInt(req.body.chunkSize as string, 10) || 500;
-    const job = await ingestionQueue.add('bse-pull', {
-      jobId: `pull_${Date.now()}`,
-      bseUrl: BSE_MOCK_URL,
-      chunkSize,
-    });
+    const jobId = `pull_${Date.now()}`;
+    const jitterDelay = 2000 + Math.floor(Math.random() * 500);
+
+    const job = await ingestionQueue.add(
+      'bse-pull',
+      {
+        jobId,
+        bseUrl: BSE_MOCK_URL,
+        chunkSize,
+      },
+      {
+        jobId,
+        attempts: 5,
+        backoff: {
+          type: 'exponential',
+          delay: jitterDelay,
+        },
+      }
+    );
 
     res.json({
       success: true,

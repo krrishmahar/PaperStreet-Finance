@@ -1,5 +1,6 @@
 import Redis from 'ioredis';
 import { Queue, Worker, type Job } from 'bullmq';
+import CircuitBreaker from 'opossum';
 import { insertTradesBatch, type Trade } from '../db/index';
 import 'dotenv/config';
 
@@ -22,6 +23,15 @@ export const TRADE_EVENTS_CHANNEL = 'trades:realtime:events';
 
 export const ingestionQueue = new Queue(INGESTION_QUEUE_NAME, {
   connection: redisConnection,
+  defaultJobOptions: {
+    attempts: 5,
+    backoff: {
+      type: 'exponential',
+      delay: 2000,
+    },
+    removeOnComplete: false,
+    removeOnFail: false,
+  },
 });
 
 export interface IngestionJobData {
@@ -31,36 +41,84 @@ export interface IngestionJobData {
   totalEstimatedTimeMs?: number;
 }
 
+export interface BseFetchPayload {
+  success: boolean;
+  data: Trade[];
+  meta: {
+    totalRecords: number;
+    nextCursor: number | null;
+    progressPercent: number;
+    isCompleted: boolean;
+  };
+}
+
+/**
+ * Raw fetch function for BSE Mock API
+ */
+async function fetchBseChunk(url: string): Promise<BseFetchPayload> {
+  const response = await fetch(url, { signal: AbortSignal.timeout(10000) });
+  if (!response.ok) {
+    throw new Error(`BSE API error HTTP ${response.status}: ${response.statusText}`);
+  }
+  return (await response.json()) as BseFetchPayload;
+}
+
+/**
+ * Opossum Circuit Breaker:
+ * Configured to trip if error rate exceeds 50% within a 30s sliding window.
+ */
+const breakerOptions: CircuitBreaker.Options = {
+  timeout: 10000, // 10s execution timeout
+  errorThresholdPercentage: 50, // Trip if >= 50% requests fail
+  resetTimeout: 30000, // Stay in OPEN state for 30s before attempting HALF-OPEN
+  rollingCountTimeout: 30000, // 30s statistical window
+  name: 'bse-api-circuit-breaker',
+};
+
+export const bseCircuitBreaker = new CircuitBreaker(fetchBseChunk, breakerOptions);
+
+bseCircuitBreaker.on('open', () => {
+  console.warn(
+    '[CircuitBreaker] ⚠️ BSE API Breaker TRIPPED (OPEN): Failure rate >50% within 30s. Halting upstream calls.'
+  );
+});
+
+bseCircuitBreaker.on('halfOpen', () => {
+  console.log('[CircuitBreaker] 🔄 BSE API Breaker HALF-OPEN: Testing upstream connectivity with probe request...');
+});
+
+bseCircuitBreaker.on('close', () => {
+  console.log('[CircuitBreaker] ✅ BSE API Breaker CLOSED: Upstream connection healthy and recovered.');
+});
+
 export const ingestionWorker = new Worker<IngestionJobData>(
   INGESTION_QUEUE_NAME,
   async (job: Job<IngestionJobData>) => {
-    const { bseUrl, chunkSize } = job.data;
-    console.log(`[IngestionWorker] Starting BSE Trade Ingestion Task: ${job.id}`);
+    const { bseUrl, chunkSize, jobId } = job.data;
+    console.log(`[IngestionWorker] Starting BSE Trade Ingestion Task: ${job.id} (JobId: ${jobId})`);
 
-    let cursor: number | null = 0;
+    // Redis Persistent Cursor Key for crash-resilience
+    const cursorKey = `bse:ingestion:cursor:${jobId || 'latest'}`;
+
+    // Check for saved checkpoint cursor in Redis
+    const savedCursor = await redisConnection.get(cursorKey);
+    let cursor: number | null = savedCursor !== null ? parseInt(savedCursor, 10) : 0;
+
+    if (savedCursor !== null) {
+      console.log(`[IngestionWorker] 🔁 Resuming ingestion from saved Redis cursor: ${cursor}`);
+    }
+
     let totalIngested = 0;
 
     while (cursor !== null) {
       const url = `${bseUrl}/getTrades?cursor=${cursor}&limit=${chunkSize}`;
-      const response = await fetch(url, { signal: AbortSignal.timeout(10000) });
 
-      if (!response.ok) {
-        throw new Error(`BSE API error HTTP ${response.status}`);
-      }
-
-      const payload = (await response.json()) as {
-        success: boolean;
-        data: Trade[];
-        meta: {
-          totalRecords: number;
-          nextCursor: number | null;
-          progressPercent: number;
-          isCompleted: boolean;
-        };
-      };
+      // Execute external API call through Circuit Breaker
+      const payload = (await bseCircuitBreaker.fire(url)) as BseFetchPayload;
 
       const trades = payload.data;
       if (trades && trades.length > 0) {
+        // 1. Commit chunk to PostgreSQL via Idempotent Temporal Upsert
         const result = await insertTradesBatch(trades);
         totalIngested += result.insertedCount;
 
@@ -70,6 +128,7 @@ export const ingestionWorker = new Worker<IngestionJobData>(
           );
         }
 
+        // 2. Publish Real-time chunk notification
         await redisPublisher.publish(
           TRADE_EVENTS_CHANNEL,
           JSON.stringify({
@@ -89,8 +148,18 @@ export const ingestionWorker = new Worker<IngestionJobData>(
         );
       }
 
+      // 3. Persist checkpoint cursor to Redis for fault-recovery
       cursor = payload.meta.nextCursor;
-      await new Promise((r) => setTimeout(r, 100));
+      if (cursor !== null) {
+        await redisConnection.set(cursorKey, cursor.toString(), 'EX', 86400);
+      } else {
+        // Ingestion completed: clean up checkpoint cursor
+        await redisConnection.del(cursorKey);
+      }
+
+      // Apply backoff with jitter between chunk requests (50ms - 150ms)
+      const jitterMs = 50 + Math.floor(Math.random() * 100);
+      await new Promise((r) => setTimeout(r, jitterMs));
     }
 
     await redisPublisher.publish(
