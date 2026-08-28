@@ -9,7 +9,23 @@
 [![Prometheus](https://img.shields.io/badge/Prometheus-v2.51.0-e6522c?style=flat&logo=prometheus)](https://prometheus.io/)
 [![Grafana](https://img.shields.io/badge/Grafana-10.4.0-f46800?style=flat&logo=grafana)](https://grafana.com/)
 
+> 🚀 **Live Production Deployment**:  
+> To view the live production deployment, visit **[Arham Fintech · BSE Ingestion](https://fintech.krrish-works.me/)**.
+
 > **Production-grade, zero-polling real-time financial trading dashboard** engineered to ingest 10,000+ BSE trades across 15-minute market windows while strictly respecting a 30-second network proxy drop constraint.
+
+---
+
+## 🖥️ Platform UI & Real-Time Dashboard Preview
+
+### 1. Real-Time Ingestion Overview & 60FPS TradingView Canvas
+![Arham Fintech Real-Time Overview](docs/images/dashboard_overview.png)
+
+### 2. Symbol Distribution & API Latency Analytics
+![Symbol Distribution & Latency Analytics](docs/images/symbol_distribution_and_latency.png)
+
+### 3. Live 60FPS Virtualized Trade Stream Table
+![Live Virtualized Trade Stream Table](docs/images/live_trade_stream.png)
 
 ---
 
