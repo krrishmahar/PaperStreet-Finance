@@ -5,7 +5,13 @@ async function runNextjsUiPlaywrightTest() {
   console.log('   PLAYWRIGHT NEXT.JS UI RESILIENCE & INTEGRATION TEST SUITE');
   console.log('===================================================================');
 
-  const browser = await chromium.launch({ headless: true });
+  const isHeaded = process.argv.includes('--headed') || process.env.HEADED === 'true' || process.env.HEADLESS === 'false';
+  console.log(`[Playwright] Launching browser (Mode: ${isHeaded ? 'HEADED (Visible Desktop Window)' : 'HEADLESS'})...`);
+
+  const browser = await chromium.launch({
+    headless: !isHeaded,
+    slowMo: isHeaded ? 150 : 0,
+  });
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const page = await context.newPage();
 
