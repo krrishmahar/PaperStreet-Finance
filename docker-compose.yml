@@ -47,6 +47,8 @@ services:
     container_name: fintech-redis
     restart: unless-stopped
     mem_limit: 1024m
+    cap_add:
+      - NET_ADMIN
     command: [ "redis-server", "--maxmemory", "1024mb", "--maxmemory-policy", "noeviction" ]
     ports:
       - "6380:6379"

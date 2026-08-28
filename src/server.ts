@@ -123,13 +123,22 @@ app.get('/api/stream', async (req: Request, res: Response) => {
   // Send initial keepalive
   res.write(': keepalive\n\n');
 
-  // Heartbeat comment (: ping\n\n) + data event emitted every 15s to bypass 30s proxy/ALB timeout kill-switches and reset client watchdog
-  const heartbeatInterval = setInterval(() => {
+  // Heartbeat emitted every 10s only if upstream Redis is responsive
+  const heartbeatInterval = setInterval(async () => {
     if (!res.writableEnded) {
-      res.write(': ping\n\n');
-      res.write(`data: ${JSON.stringify({ event: 'HEARTBEAT', timestamp: Date.now() })}\n\n`);
+      try {
+        // Fast ping to verify Redis responsiveness
+        await Promise.race([
+          redisStreamReader.ping(),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Redis timeout')), 2000)),
+        ]);
+        res.write(': ping\n\n');
+        res.write(`data: ${JSON.stringify({ event: 'HEARTBEAT', timestamp: Date.now() })}\n\n`);
+      } catch (err) {
+        // Upstream Redis paused or unreachable: suppress heartbeat so client watchdog can detect freeze
+      }
     }
-  }, 15000);
+  }, 10000);
 
   // Read Last-Event-ID header or query param
   const lastEventId =

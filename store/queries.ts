@@ -135,14 +135,18 @@ export function useSseStream() {
       if (!isMountedRef.current) return
       console.warn('[Watchdog] ⚠️ No heartbeat/event received in 25s. Connection marked STALE. Reconnecting...');
       setConnectionStatus('STALE')
-      setStatusMessage('Connection Stale (Watchdog Triggered)')
+      setStatusMessage('Connection Stale (Reconnecting...)')
       
       // Close stalled connection and trigger reconnect
       if (eventSourceRef.current) {
         eventSourceRef.current.close()
         eventSourceRef.current = null
       }
-      connectStream()
+      setTimeout(() => {
+        if (isMountedRef.current) {
+          connectStream()
+        }
+      }, 1500)
     }, 25000)
   }, [recordHeartbeat, setConnectionStatus, setStatusMessage])
 

@@ -37,29 +37,62 @@ const DEFAULT_FLOW_POINTS = [
   { time: 1724824800, turnover: 6.12, buys: 4.34 },
 ]
 
+function sanitizeAndSortSeriesData(data: Array<{ time: number; value: number }>): Array<{ time: UTCTimestamp; value: number }> {
+  if (!data || data.length === 0) return []
+  const sorted = [...data].sort((a, b) => a.time - b.time)
+  const deduped: Array<{ time: UTCTimestamp; value: number }> = []
+
+  for (let i = 0; i < sorted.length; i++) {
+    const item = sorted[i]
+    if (!item || isNaN(item.time) || isNaN(item.value)) continue
+    if (deduped.length > 0 && (deduped[deduped.length - 1].time as number) === item.time) {
+      deduped[deduped.length - 1].value = item.value
+    } else {
+      deduped.push({ time: item.time as UTCTimestamp, value: item.value })
+    }
+  }
+  return deduped
+}
+
 export const TradingViewChart = forwardRef<TradingViewChartRef, TradingViewChartProps>(
   ({ initialData, height = 290 }, ref) => {
     const chartContainerRef = useRef<HTMLDivElement>(null)
     const chartInstanceRef = useRef<IChartApi | null>(null)
     const turnoverSeriesRef = useRef<ISeriesApi<'Area'> | null>(null)
     const buyFlowSeriesRef = useRef<ISeriesApi<'Line'> | null>(null)
+    const lastTurnoverTimeRef = useRef<number>(0)
+    const lastBuyTimeRef = useRef<number>(0)
 
-    // Expose imperative update handles (bypasses React state for 60FPS real-time rendering)
+    // Expose imperative update handles (protected against out-of-order ticks & jitter)
     useImperativeHandle(ref, () => ({
       updateTurnover: (timestampSec: number, turnoverCr: number) => {
-        if (turnoverSeriesRef.current) {
-          turnoverSeriesRef.current.update({
-            time: timestampSec as UTCTimestamp,
-            value: turnoverCr,
-          })
+        if (!turnoverSeriesRef.current || isNaN(timestampSec) || isNaN(turnoverCr)) return
+        // Silently discard out-of-order retro-ticks to prevent TradingView assertion crashes
+        if (timestampSec >= lastTurnoverTimeRef.current) {
+          try {
+            turnoverSeriesRef.current.update({
+              time: timestampSec as UTCTimestamp,
+              value: turnoverCr,
+            })
+            lastTurnoverTimeRef.current = timestampSec
+          } catch (err) {
+            console.warn('[TradingViewChart] Suppressed out-of-bounds turnover tick:', err)
+          }
         }
       },
       updateBuyFlow: (timestampSec: number, buyCr: number) => {
-        if (buyFlowSeriesRef.current) {
-          buyFlowSeriesRef.current.update({
-            time: timestampSec as UTCTimestamp,
-            value: buyCr,
-          })
+        if (!buyFlowSeriesRef.current || isNaN(timestampSec) || isNaN(buyCr)) return
+        // Silently discard out-of-order retro-ticks to prevent TradingView assertion crashes
+        if (timestampSec >= lastBuyTimeRef.current) {
+          try {
+            buyFlowSeriesRef.current.update({
+              time: timestampSec as UTCTimestamp,
+              value: buyCr,
+            })
+            lastBuyTimeRef.current = timestampSec
+          } catch (err) {
+            console.warn('[TradingViewChart] Suppressed out-of-bounds buy flow tick:', err)
+          }
         }
       },
       getChart: () => chartInstanceRef.current,
@@ -140,20 +173,24 @@ export const TradingViewChart = forwardRef<TradingViewChartRef, TradingViewChart
       })
       buyFlowSeriesRef.current = buyFlowSeries
 
-      // 4. Hydrate Initial Series Data
+      // 4. Hydrate Initial Series Data with Chronological Sorting & Deduplication
       const dataset = initialData && initialData.length > 0 ? initialData : DEFAULT_FLOW_POINTS
-      turnoverSeries.setData(
-        dataset.map((d) => ({
-          time: d.time as UTCTimestamp,
-          value: d.turnover,
-        }))
+      const sanitizedTurnover = sanitizeAndSortSeriesData(
+        dataset.map((d) => ({ time: d.time, value: d.turnover }))
       )
-      buyFlowSeries.setData(
-        dataset.map((d) => ({
-          time: d.time as UTCTimestamp,
-          value: d.buys,
-        }))
+      const sanitizedBuys = sanitizeAndSortSeriesData(
+        dataset.map((d) => ({ time: d.time, value: d.buys }))
       )
+
+      turnoverSeries.setData(sanitizedTurnover)
+      buyFlowSeries.setData(sanitizedBuys)
+
+      if (sanitizedTurnover.length > 0) {
+        lastTurnoverTimeRef.current = sanitizedTurnover[sanitizedTurnover.length - 1].time as number
+      }
+      if (sanitizedBuys.length > 0) {
+        lastBuyTimeRef.current = sanitizedBuys[sanitizedBuys.length - 1].time as number
+      }
 
       chart.timeScale().fitContent()
 

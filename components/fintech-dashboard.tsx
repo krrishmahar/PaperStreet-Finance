@@ -323,27 +323,25 @@ export function FintechDashboard() {
             {/* Dark status container in Monospace font with dynamic Watchdog state */}
             <div className="h-10 flex items-center gap-2 border border-border/80 bg-slate-900/90 px-3.5 rounded-lg font-mono text-xs text-slate-300 shadow-inner">
               <span
-                className={`size-2 rounded-full ${
-                  connectionStatus === 'CONNECTED'
+                className={`size-2 rounded-full ${connectionStatus === 'CONNECTED'
                     ? 'bg-emerald-400 animate-pulse shadow-[0_0_8px_#10b981]'
                     : connectionStatus === 'CONNECTING'
                       ? 'bg-amber-400 animate-pulse shadow-[0_0_8px_#f59e0b]'
                       : connectionStatus === 'STALE'
                         ? 'bg-orange-500 animate-ping shadow-[0_0_8px_#f97316]'
                         : 'bg-rose-500 shadow-[0_0_8px_#f43f5e]'
-                }`}
+                  }`}
               />
               Status:{' '}
               <span
-                className={`font-semibold tracking-wide ${
-                  connectionStatus === 'CONNECTED'
+                className={`font-semibold tracking-wide ${connectionStatus === 'CONNECTED'
                     ? 'text-emerald-400'
                     : connectionStatus === 'CONNECTING'
                       ? 'text-amber-400'
                       : connectionStatus === 'STALE'
                         ? 'text-orange-400'
                         : 'text-rose-400'
-                }`}
+                  }`}
               >
                 {statusMessage}
               </span>
