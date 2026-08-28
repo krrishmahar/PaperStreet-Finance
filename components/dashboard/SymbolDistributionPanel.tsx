@@ -60,7 +60,7 @@ export function SymbolDistributionPanel({
       </CardHeader>
       <CardContent>
         <ChartContainer
-          config={{ trades: { label: 'Trades', color: '#475569' } }}
+          config={{ trades: { label: 'Trades', color: '#10b981' } }}
           className="h-48 w-full"
         >
           <BarChart data={data}>
@@ -68,7 +68,7 @@ export function SymbolDistributionPanel({
             <XAxis dataKey="symbol" tickLine={false} axisLine={false} tick={{ fontSize: 10, fill: '#94a3b8' }} />
             <YAxis hide />
             <RechartsTooltip content={<ChartTooltipContent />} />
-            <Bar dataKey="trades" name="trades" fill="#64748b" radius={[3, 3, 0, 0]} />
+            <Bar dataKey="trades" name="trades" fill="#10b981" radius={[4, 4, 0, 0]} />
           </BarChart>
         </ChartContainer>
       </CardContent>

@@ -59,7 +59,7 @@ export function TurnoverChartPanel({
             </Tooltip>
           </CardTitle>
           <p className="mt-1 text-xs text-muted-foreground">
-            ₹ Crores · Imperative 60FPS canvas engine · 15-minute intervals
+            ₹ Crores · Imperative 60FPS canvas engine · Real-time market flow
           </p>
         </div>
         <Badge

@@ -66,7 +66,7 @@ app.get('/api/trades', async (req: Request, res: Response) => {
   try {
     const limit = parseInt(req.query.limit as string, 10) || 200;
     const trades = await getRecentTrades(limit);
-    res.json({ success: true, count: trades.length, trades });
+    res.json({ success: true, count: trades.length, trades, data: trades });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -75,7 +75,7 @@ app.get('/api/trades', async (req: Request, res: Response) => {
 app.get('/api/metrics', async (_req: Request, res: Response) => {
   try {
     const metrics = await getTradeMetrics();
-    res.json({ success: true, metrics });
+    res.json({ success: true, metrics, data: metrics });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }

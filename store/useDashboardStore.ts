@@ -38,6 +38,7 @@ interface DashboardState {
   progress: number
   isPulling: boolean
   lastPullTime: string
+  totalIngestedCount: number
   realtimeTrades: Trade[]
 
   // Actions
@@ -52,6 +53,7 @@ interface DashboardState {
   setProgress: (progress: number) => void
   setIsPulling: (pulling: boolean) => void
   setLastPullTime: (time: string) => void
+  setTotalIngestedCount: (count: number) => void
   setRealtimeTrades: (trades: Trade[] | ((prev: Trade[]) => Trade[])) => void
   prependChunkTrades: (newTrades: Trade[]) => void
   flushStoreState: () => void
@@ -71,6 +73,7 @@ export const useDashboardStore = create<DashboardState>((set) => ({
   progress: 0,
   isPulling: false,
   lastPullTime: '11:33:35 am',
+  totalIngestedCount: 0,
   realtimeTrades: [],
 
   setFilterSymbol: (filterSymbol) => set({ filterSymbol }),
@@ -89,6 +92,7 @@ export const useDashboardStore = create<DashboardState>((set) => ({
   setProgress: (progress) => set({ progress }),
   setIsPulling: (isPulling) => set({ isPulling }),
   setLastPullTime: (lastPullTime) => set({ lastPullTime }),
+  setTotalIngestedCount: (totalIngestedCount) => set({ totalIngestedCount }),
   setRealtimeTrades: (trades) =>
     set((state) => ({
       realtimeTrades: typeof trades === 'function' ? trades(state.realtimeTrades) : trades,
@@ -105,6 +109,7 @@ export const useDashboardStore = create<DashboardState>((set) => ({
       realtimeTrades: [],
       progress: 0,
       isPulling: false,
+      totalIngestedCount: 0,
       lastEventId: null,
       statusMessage: 'System Flushed (Clean Initial State)',
     }),

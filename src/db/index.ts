@@ -77,14 +77,20 @@ export async function initDb(): Promise<void> {
   const client = await pgPool.connect();
   try {
     await client.query(`
+      DO $$ BEGIN
+        CREATE TYPE trade_direction AS ENUM ('BUY', 'SELL');
+      EXCEPTION
+        WHEN duplicate_object THEN null;
+      END $$;
+
       CREATE TABLE IF NOT EXISTS trades (
         trade_id VARCHAR(64) PRIMARY KEY,
         client_id VARCHAR(64) NOT NULL,
         client_name VARCHAR(128) NOT NULL,
         symbol VARCHAR(32) NOT NULL,
-        quantity INTEGER NOT NULL,
-        price NUMERIC(12, 2) NOT NULL,
-        order_type VARCHAR(16) NOT NULL,
+        quantity BIGINT NOT NULL,
+        price NUMERIC(16, 4) NOT NULL,
+        order_type trade_direction NOT NULL,
         trade_timestamp TIMESTAMP WITH TIME ZONE NOT NULL,
         ingested_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
@@ -181,14 +187,21 @@ export async function getRecentTrades(limit = 100): Promise<Trade[]> {
 export async function getTradeMetrics() {
   const res = await pgPool.query(`
     SELECT 
-      COUNT(*) AS total_trades,
-      COALESCE(SUM(quantity * price), 0) AS total_turnover,
-      COALESCE(AVG(price), 0) AS avg_price,
-      COUNT(DISTINCT symbol) AS active_symbols,
-      COUNT(DISTINCT client_id) AS active_clients
+      COUNT(*)::bigint AS total_trades,
+      COALESCE(SUM(quantity * price), 0)::numeric AS total_turnover,
+      COALESCE(AVG(price), 0)::numeric AS avg_price,
+      COUNT(DISTINCT symbol)::int AS active_symbols,
+      COUNT(DISTINCT client_id)::int AS active_clients
     FROM trades
   `);
-  return res.rows[0];
+  const row = res.rows[0] || {};
+  return {
+    total_trades: Number(row.total_trades || 0),
+    total_turnover: Number(row.total_turnover || 0),
+    avg_price: Number(row.avg_price || 0),
+    active_symbols: Number(row.active_symbols || 0),
+    active_clients: Number(row.active_clients || 0),
+  };
 }
 
 const db = {

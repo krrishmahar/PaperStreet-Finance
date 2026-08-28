@@ -62,6 +62,7 @@ export function FintechDashboard() {
     progress,
     isPulling,
     lastPullTime,
+    totalIngestedCount,
     realtimeTrades,
   } = useDashboardStore()
 
@@ -131,35 +132,54 @@ export function FintechDashboard() {
   // Formatted Metric Values (computed dynamically from live stream, chunk progress & database)
   const totalTradesCount = isPulling && progress > 0
     ? Math.round((progress / 100) * 10000)
-    : trades.length > 0
-      ? (serverMetrics?.total_trades && +serverMetrics.total_trades > trades.length ? +serverMetrics.total_trades : trades.length)
-      : Number(serverMetrics?.total_trades || 0)
+    : Number(serverMetrics?.total_trades || 0) > 0
+      ? Number(serverMetrics?.total_trades)
+      : totalIngestedCount > 0
+        ? totalIngestedCount
+        : trades.length
 
   const totalTradesFormatted = totalTradesCount.toLocaleString()
 
   const liveTurnover = trades.reduce((acc, t) => acc + t.quantity * t.price, 0)
+  const dbTurnover = Number(serverMetrics?.total_turnover || 0)
   const effectiveTurnover = isPulling && progress > 0
-    ? (liveTurnover > 0 ? Math.round(liveTurnover * (100 / Math.max(progress, 1))) : Math.round((progress / 100) * 3821631875))
-    : liveTurnover > 0
-      ? liveTurnover
-      : Number(serverMetrics?.total_turnover || 0)
+    ? (liveTurnover > 0 ? Math.round(liveTurnover * (100 / Math.max(progress, 1))) : Math.round((progress / 100) * 480734428))
+    : dbTurnover > 0
+      ? dbTurnover
+      : totalTradesCount > 0 && liveTurnover > 0 && totalTradesCount > trades.length
+        ? Math.round(liveTurnover * (totalTradesCount / trades.length))
+        : liveTurnover
 
   const totalTurnoverFormatted = `₹${effectiveTurnover.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`
 
-  const activeSymbolsCount = trades.length > 0
-    ? (symbols.length > 1 ? symbols.length - 1 : 0)
-    : (isPulling && progress > 0 ? 10 : Number(serverMetrics?.active_symbols || 0))
+  const activeSymbolsCount = Number(serverMetrics?.active_symbols || 0) > 0
+    ? Number(serverMetrics?.active_symbols)
+    : trades.length > 0
+      ? (symbols.length > 1 ? symbols.length - 1 : 0)
+      : isPulling && progress > 0
+        ? 10
+        : 0
 
-  const activeClientsCount = trades.length > 0
-    ? new Set(trades.map((t) => t.client_id)).size
-    : (isPulling && progress > 0 ? 6 : Number(serverMetrics?.active_clients || 0))
+  const activeClientsCount = Number(serverMetrics?.active_clients || 0) > 0
+    ? Number(serverMetrics?.active_clients)
+    : trades.length > 0
+      ? new Set(trades.map((t) => t.client_id)).size
+      : isPulling && progress > 0
+        ? 8
+        : 0
 
   // Dynamic Telemetry Engine: computes 60FPS derived state without backend lag
   const telemetry = useMemo(() => {
-    return computeDynamicTelemetry(trades, serverMetrics)
-  }, [trades, serverMetrics])
+    return computeDynamicTelemetry(trades, {
+      total_trades: totalTradesCount,
+      total_turnover: effectiveTurnover,
+      avg_price: serverMetrics?.avg_price || 0,
+      active_symbols: activeSymbolsCount,
+      active_clients: activeClientsCount,
+    })
+  }, [trades, serverMetrics, totalTradesCount, effectiveTurnover, activeSymbolsCount, activeClientsCount])
 
-  // TradingView Lightweight-Charts Dataset (derived from live 15-minute flow)
+  // TradingView Lightweight-Charts Dataset (derived from live flow)
   const chartFlowData = useMemo(() => {
     if (telemetry.flowData.length === 0) return []
     // If no trades exist yet (clean state), return empty data

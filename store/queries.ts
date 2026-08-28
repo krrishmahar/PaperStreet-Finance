@@ -8,19 +8,21 @@ export async function fetchTrades(limit = 200): Promise<Trade[]> {
   const res = await fetch(`${API_BASE_URL}/api/trades?limit=${limit}`)
   if (!res.ok) throw new Error(`Failed to fetch trades: HTTP ${res.status}`)
   const json = await res.json()
-  return json.success && Array.isArray(json.data) ? json.data : []
+  const list = json.trades ?? json.data ?? (Array.isArray(json) ? json : [])
+  return Array.isArray(list) ? list : []
 }
 
 export async function fetchMetrics(): Promise<Metrics> {
   const res = await fetch(`${API_BASE_URL}/api/metrics`)
   if (!res.ok) throw new Error(`Failed to fetch metrics: HTTP ${res.status}`)
   const json = await res.json()
-  return json.success && json.data ? json.data : {
-    total_trades: 0,
-    total_turnover: 0,
-    avg_price: 0,
-    active_symbols: 0,
-    active_clients: 0,
+  const metricsData = json.metrics ?? json.data ?? json
+  return {
+    total_trades: Number(metricsData?.total_trades || 0),
+    total_turnover: Number(metricsData?.total_turnover || 0),
+    avg_price: Number(metricsData?.avg_price || 0),
+    active_symbols: Number(metricsData?.active_symbols || 0),
+    active_clients: Number(metricsData?.active_clients || 0),
   }
 }
 
@@ -109,6 +111,7 @@ export function useSseStream() {
     recordHeartbeat,
     setLastEventId,
     setLastPullTime,
+    setTotalIngestedCount,
     prependChunkTrades,
   } = useDashboardStore()
 
@@ -194,6 +197,11 @@ export function useSseStream() {
         if (data.event === 'TRADES_CHUNK_INGESTED') {
           setIsPulling(true)
           setProgress(data.progress)
+          if (data.totalIngested) {
+            setTotalIngestedCount(data.totalIngested)
+          } else if (data.progress && data.totalRecords) {
+            setTotalIngestedCount(Math.round((data.progress / 100) * data.totalRecords))
+          }
           setLastPullTime(
             new Date().toLocaleTimeString('en-US', {
               hour: '2-digit',
@@ -216,9 +224,9 @@ export function useSseStream() {
         } else if (data.event === 'INGESTION_COMPLETED') {
           setIsPulling(false)
           setProgress(100)
-          const totalCount = data.totalIngested
-            ? Number(data.totalIngested).toLocaleString()
-            : '10,000'
+          const totalCountNum = Number(data.totalIngested) || 10000
+          setTotalIngestedCount(totalCountNum)
+          const totalCount = totalCountNum.toLocaleString()
           setStatusMessage(`Pull Completed (${totalCount} trades)`)
           setLastPullTime(
             new Date().toLocaleTimeString('en-US', {
