@@ -1,6 +1,7 @@
 import express, { type Request, type Response } from 'express';
 import cors from 'cors';
 import Redis from 'ioredis';
+import cron from 'node-cron';
 import db, { getRecentTrades, getTradeMetrics } from './db/index';
 import { ingestionQueue, TRADE_EVENTS_CHANNEL, REDIS_STREAM_KEY } from './ingestion/worker';
 import { redisStreamWrapper } from './redisStreamWrapper';
@@ -10,6 +11,7 @@ import 'dotenv/config';
 const app = express();
 const PORT = Number(process.env.PORT || 5000);
 const BSE_MOCK_URL = process.env.BSE_MOCK_URL || 'http://localhost:4000';
+const PING_PATH = '/api/ping';
 
 app.use(cors());
 app.use(express.json());
@@ -278,7 +280,38 @@ async function startServer() {
 
   app.listen(PORT, () => {
     console.log(`[Fintech Backend] Server listening at http://localhost:${PORT}`);
+    startSelfPingCron();
   });
+}
+
+function startSelfPingCron() {
+  if (process.env.NODE_ENV !== 'production') {
+    return;
+  }
+
+  const rawBaseUrl = process.env.RENDER_EXTERNAL_URL || process.env.PROD_URL;
+  if (!rawBaseUrl) {
+    console.warn('[Self Ping] Skipped: RENDER_EXTERNAL_URL/PROD_URL is not set');
+    return;
+  }
+
+  const baseUrl = /^https?:\/\//.test(rawBaseUrl) ? rawBaseUrl : `https://${rawBaseUrl}`;
+  const pingUrl = new URL(PING_PATH, baseUrl).toString();
+
+  cron.schedule('*/10 * * * *', async () => {
+    try {
+      const response = await fetch(pingUrl);
+      if (!response.ok) {
+        console.warn(`[Self Ping] Failed (${response.status}): ${pingUrl}`);
+        return;
+      }
+      console.log(`[Self Ping] Success: ${pingUrl}`);
+    } catch (error) {
+      console.error('[Self Ping] Request error:', error);
+    }
+  });
+
+  console.log(`[Self Ping] Scheduled every 10 minutes at ${pingUrl}`);
 }
 
 startServer();

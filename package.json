@@ -36,6 +36,7 @@
     "lightweight-charts": "^5.2.1",
     "lucide-react": "^1.16.0",
     "next": "16.3.3",
+    "node-cron": "^4.6.0",
     "opossum": "^10.0.0",
     "pg": "^8.11.5",
     "prom-client": "^15.1.3",
