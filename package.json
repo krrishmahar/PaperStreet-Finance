@@ -1,5 +1,5 @@
 {
-  "name": "arham-fintech-bse-dashboard",
+  "name": "PaperStreet-Finance-bse-dashboard",
   "version": "1.0.0",
   "description": "Real-time BSE trade ingestion & dashboard with 30s timeout resilience",
   "private": true,

@@ -12,7 +12,7 @@ databases:
 services:
   # Express API Gateway + BullMQ Worker + BSE Mock (Unified Backend)
   - type: web
-    name: arham-fintech-api
+    name: PaperStreet-Finance-api
     env: node
     plan: free
     buildCommand: npm install
