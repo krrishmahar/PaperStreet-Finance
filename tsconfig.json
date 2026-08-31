@@ -29,5 +29,5 @@
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts"
   ],
-  "exclude": ["node_modules", "dist", "client", "arham-fintech-dashboard"]
+  "exclude": ["node_modules", "dist", "client", "PaperStreet-Finance-dashboard"]
 }

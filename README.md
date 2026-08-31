@@ -194,8 +194,8 @@ Ensure you have the following installed on your host machine:
 
 ### Step 1: Clone the Repository
 ```bash
-git clone https://github.com/krrishmahar/arham-fintech.git
-cd arham-fintech
+git clone https://github.com/krrishmahar/PaperStreet-Finance.git
+cd PaperStreet-Finance
 ```
 
 ### Step 2: Install Node.js Dependencies
